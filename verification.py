@@ -632,10 +632,11 @@ class SimulationVerifier(object):
         pyplot.savefig(filename)
         pyplot.close('all')
 
-
     def run_dtwf_coalescent_comparison(self, test_name, **kwargs):
         df = pd.DataFrame()
         for model in ["hudson", "dtwf"]:
+            if model == 'dtwf':
+                kwargs['Ne'] = 1
             kwargs["model"] = model
             print("Running: ", kwargs)
             replicates = msprime.simulate(**kwargs)
@@ -661,6 +662,8 @@ class SimulationVerifier(object):
             sm.graphics.qqplot(v1)
             sm.qqplot_2samples(v1, v2, line="45")
             f = os.path.join(basedir, "{}.png".format(stat))
+            pyplot.xlabel('msp_dtwf')
+            pyplot.ylabel('msp_hudson')
             pyplot.savefig(f, dpi=72)
             pyplot.close('all')
 
@@ -668,21 +671,54 @@ class SimulationVerifier(object):
         """
         Checks the DTWF against the standard coalescent at a single locus.
         """
+        population_configurations = [
+            msprime.PopulationConfiguration(sample_size=10, initial_size=100)]
         def f():
             self.run_dtwf_coalescent_comparison(
-                "dtwf_vs_coalescent_single_locus", sample_size=10, Ne=1000,
-                num_replicates=100)
+                "dtwf_vs_coalescent_single_locus",
+                Ne=0.5,
+                population_configurations=population_configurations,
+                num_replicates=500)
         self._instances["dtwf_vs_coalescent_single_locus"] = f
 
     def add_dtwf_vs_coalescent_low_recombination(self):
         """
-        Checks the DTWF against the standard coalescent at a single locus.
+        Checks the DTWF against the standard coalescent with low recombination.
         """
+        population_configurations = [
+            msprime.PopulationConfiguration(sample_size=10, initial_size=1000)]
         def f():
             self.run_dtwf_coalescent_comparison(
-                "dtwf_vs_coalescent_low_recombination", sample_size=10, Ne=1000,
+                "dtwf_vs_coalescent_low_recombination", Ne=0.5,
+                population_configurations=population_configurations,
                 num_replicates=100, recombination_rate=0.01)
         self._instances["dtwf_vs_coalescent_low_recombination"] = f
+
+    def add_dtwf_vs_coalescent_low_recombination_2(self):
+        """
+        Checks the DTWF against the standard coalescent with low recombination.
+        """
+        population_configurations = [
+            msprime.PopulationConfiguration(sample_size=2, initial_size=1000)]
+        def f():
+            self.run_dtwf_coalescent_comparison(
+                "dtwf_vs_coalescent_low_recombination_2", Ne=0.5,
+                population_configurations=population_configurations,
+                num_replicates=500, recombination_rate=0.01)
+        self._instances["dtwf_vs_coalescent_low_recombination_2"] = f
+
+    def add_dtwf_vs_coalescent_high_recombination(self):
+        """
+        Checks the DTWF against the standard coalescent at a single locus.
+        """
+        population_configurations = [
+            msprime.PopulationConfiguration(sample_size=2, initial_size=1000)]
+        def f():
+            self.run_dtwf_coalescent_comparison(
+                "dtwf_vs_coalescent_high_recombination", Ne=0.5,
+                population_configurations=population_configurations,
+                num_replicates=500, recombination_rate=0.5)
+        self._instances["dtwf_vs_coalescent_high_recombination"] = f
 
     def _get_xi_dirac_mutation_stats(self, sample_size, num_repeat, mut_rate, rec_rate, num_loci):
         # TODO Fix this! We can write the output to a proper temporary file, or
@@ -1045,7 +1081,10 @@ def main():
 
     # DTWF checks against coalescent.
     verifier.add_dtwf_vs_coalescent_single_locus()
+    verifier.add_dtwf_vs_coalescent_single_locus_2()
     verifier.add_dtwf_vs_coalescent_low_recombination()
+    verifier.add_dtwf_vs_coalescent_low_recombination_2()
+    verifier.add_dtwf_vs_coalescent_high_recombination()
 
     keys = None
     if len(sys.argv) > 1:
