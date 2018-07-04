@@ -2385,8 +2385,15 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                     continue;
                 }
                 /* TODO this is brittle here, as it's easy to overflow gsl_ran_poisson.
-                 * Also, is this the correct model? */
-                num_migrations = GSL_MAX(n, gsl_ran_poisson(self->rng, mu));
+                 * Also, is this the correct model?
+                 * num_migrations = GSL_MIN(n, gsl_ran_poisson(self->rng, mu));
+                 * ^^ This inexplicably wasn't correctly choosing the min
+                 */
+                num_migrations = gsl_ran_poisson(self->rng, mu);
+                if (n < num_migrations) {
+                    num_migrations = n;
+                }
+                assert(n >= num_migrations);
                 for (i = 0; i < num_migrations; i++) {
                     /* m[j, k] is the rate at which migrants move from
                      * population k to j forwards in time. Backwards
@@ -2413,7 +2420,9 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             }
         }
         if (self->next_demographic_event != NULL) {
-            if (self->next_demographic_event->time >= self->time) {
+            if (self->next_demographic_event->time <= self->time) {
+                // We should always be able to execute at the exact time
+                assert(self->next_demographic_event->time == self->time);
                 ret = msp_apply_demographic_events(self);
                 if (ret != 0) {
                     goto out;
