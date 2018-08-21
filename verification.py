@@ -671,7 +671,7 @@ class SimulationVerifier(object):
         def f():
             self.run_dtwf_coalescent_comparison(
                 "dtwf_vs_coalescent_single_locus", sample_size=10, Ne=1000,
-                num_replicates=100)
+                num_replicates=200)
         self._instances["dtwf_vs_coalescent_single_locus"] = f
 
     def add_dtwf_vs_coalescent_low_recombination(self):
@@ -684,35 +684,80 @@ class SimulationVerifier(object):
                 num_replicates=100, recombination_rate=0.01)
         self._instances["dtwf_vs_coalescent_low_recombination"] = f
 
-    def add_dtwf_vs_coalescent_2_pops(self):
+    def add_dtwf_vs_coalescent_3_pops(self):
         """
         TODO: Reset to original test
         Checks the DTWF against coalescent in two small populations
         """
-        Ne = 1000
+        Ne = 500
         sample_size = 10
-        num_loci = int(1e6)
+        num_loci = int(1e7)
         recombination_rate = 1e-8
 
         population_configurations = [
-            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne),
-            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne)]
+            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01),
+            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01),
+            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01)]
         recombination_map = msprime.RecombinationMap(
                 [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
         migration_matrix = [
-                [0, 0.1],
-                [0.1, 0]]
+                [0, 0.1, 0.1],
+                [0.1, 0, 0.1],
+                [0.1, 0.1, 0]]
 
         def f():
             self.run_dtwf_coalescent_comparison(
-                    "dtwf_vs_coalescent_2_pops",
+                    "dtwf_vs_coalescent_3_pops",
                     population_configurations=population_configurations,
                     migration_matrix=migration_matrix,
-                    Ne=0.5,
-                    num_replicates=500,
+                    num_replicates=200,
                     recombination_map=recombination_map,
                     )
-        self._instances["dtwf_vs_coalescent_2_pops"] = f
+        self._instances["dtwf_vs_coalescent_3_pops"] = f
+
+    def add_dtwf_vs_coalescent(self, key, initial_sizes, sample_sizes, num_loci,
+            recombination_rate, migration_matrix=None,
+            growth_rates=None, num_replicates=None):
+        """
+        Generic test of DTWF vs hudson coalescent
+        """
+        assert len(sample_sizes) == len(initial_sizes)
+        num_pops = len(sample_sizes)
+
+        if growth_rates is None:
+            default_growth_rate = 0.01
+            growth_rates = [default_growth_rate] * num_pops
+
+        population_configurations = []
+        for s_size, i_size, g_rate in zip(sample_sizes, initial_sizes, growth_rates):
+            population_configurations.append(
+                    msprime.PopulationConfiguration(
+                        sample_size=s_size,
+                        initial_size=i_size,
+                        growth_rate=g_rate
+                        )
+                    )
+
+        recombination_map = msprime.RecombinationMap(
+                [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
+
+        if migration_matrix is None:
+            default_mig_rate = 0.01
+            migration_matrix = []
+            for i in range(num_pops):
+                row = [default_mig_rate] * num_pops
+                row[i] = 0
+                migration_matrix.append(row)
+
+        def f():
+            self.run_dtwf_coalescent_comparison(
+                    key,
+                    population_configurations=population_configurations,
+                    migration_matrix=migration_matrix,
+                    num_replicates=200,
+                    recombination_map=recombination_map,
+                    )
+        self._instances[key] = f
 
     def add_dtwf_vs_coalescent_2_pops_massmigration(self):
         population_configurations = [
@@ -762,7 +807,6 @@ class SimulationVerifier(object):
                 "dtwf_vs_coalescent_2_pop_growth",
                 population_configurations=population_configurations,
                 recombination_map=recombination_map,
-                Ne=0.5,
                 num_replicates=300)
         self._instances["dtwf_vs_coalescent_2_pop_growth"] = f
 
@@ -773,12 +817,12 @@ class SimulationVerifier(object):
             msprime.PopulationConfiguration(
                 sample_size=10, initial_size=initial_size, growth_rate=-0.01)]
         recombination_map = msprime.RecombinationMap(
-                [0, int(1e6)], [1e-8, 0], num_loci=int(1e6))
+                [0, int(1e7)], [1e-8, 0], num_loci=int(1e7))
         demographic_events = [
                 msprime.PopulationParametersChange(
-                        time=100,
+                        time=200,
                         initial_size=initial_size,
-                        growth_rate=0.05,
+                        growth_rate=0.01,
                         population_id=0)
                 ]
         def f():
@@ -787,8 +831,7 @@ class SimulationVerifier(object):
                 population_configurations=population_configurations,
                 recombination_map=recombination_map,
                 demographic_events=demographic_events,
-                Ne=0.5,
-                num_replicates=100)
+                num_replicates=300)
         self._instances["dtwf_vs_coalescent_2_pop_shrink"] = f
 
     def _get_xi_dirac_mutation_stats(self, sample_size, num_repeat, mut_rate, rec_rate, num_loci):
@@ -1153,11 +1196,15 @@ def main():
     # DTWF checks against coalescent.
     verifier.add_dtwf_vs_coalescent_single_locus()
     verifier.add_dtwf_vs_coalescent_low_recombination()
-    verifier.add_dtwf_vs_coalescent_low_recombination_2()
-    verifier.add_dtwf_vs_coalescent_high_recombination()
     verifier.add_dtwf_vs_coalescent_2_pops_massmigration()
-    verifier.add_dtwf_vs_coalescent_2_pops()
-    verifier.add_dtwf_vs_coalescent_2_pops_high_recomb()
+    # verifier.add_dtwf_vs_coalescent_2_pops()
+    verifier.add_dtwf_vs_coalescent('dtwf_long_region', [1000], [10], int(1e8), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_2_pops', [500, 500], [5, 5], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_2_pops_2', [500, 500], [20, 0], int(1e7), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_3_pops', [500, 500, 500], [5, 5, 5], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_3_pops_2', [500, 500, 500], [20, 0, 0], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent_3_pops()
+    # verifier.add_dtwf_vs_coalescent_2_pops_high_recomb()
     verifier.add_dtwf_vs_coalescent_2_pop_growth()
     verifier.add_dtwf_vs_coalescent_2_pop_shrink()
 

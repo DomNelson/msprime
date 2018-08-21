@@ -2266,7 +2266,10 @@ msp_dtwf_generation(msp_t *self)
          * to the nearest integer. Thus, the population's size is always relative
          * to the reference model population size (which is also true for the
          * coalescent models. */
-        N = (uint32_t) round(
+        // This may not be ideal, but with low migration / high growth rates it is possible for
+        // populations to reach zero individuals before all lineages coalesce. We round up to
+        // avoid this.
+        N = (uint32_t) ceil(
             msp_get_population_size(self, pop) * self->model.population_size);
         /* printf("%u parents to choose from %f \n", N, msp_get_population_size(self, pop)); */
         if (N == 0) {
