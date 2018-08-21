@@ -724,6 +724,9 @@ class SimulationVerifier(object):
         assert len(sample_sizes) == len(initial_sizes)
         num_pops = len(sample_sizes)
 
+        if num_replicates is None:
+            num_replicates = 200
+
         if growth_rates is None:
             default_growth_rate = 0.01
             growth_rates = [default_growth_rate] * num_pops
@@ -754,7 +757,7 @@ class SimulationVerifier(object):
                     key,
                     population_configurations=population_configurations,
                     migration_matrix=migration_matrix,
-                    num_replicates=200,
+                    num_replicates=num_replicates,
                     recombination_map=recombination_map,
                     )
         self._instances[key] = f
@@ -1197,16 +1200,29 @@ def main():
     verifier.add_dtwf_vs_coalescent_single_locus()
     verifier.add_dtwf_vs_coalescent_low_recombination()
     verifier.add_dtwf_vs_coalescent_2_pops_massmigration()
-    # verifier.add_dtwf_vs_coalescent_2_pops()
+    verifier.add_dtwf_vs_coalescent_2_pop_growth()
+    verifier.add_dtwf_vs_coalescent_2_pop_shrink()
+
     verifier.add_dtwf_vs_coalescent('dtwf_long_region', [1000], [10], int(1e8), 1e-8)
-    verifier.add_dtwf_vs_coalescent('dtwf_2_pops', [500, 500], [5, 5], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_short_region', [1000], [10], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_2_pops', [500, 500], [5, 5], int(1e6), 1e-8, num_replicates=500)
     verifier.add_dtwf_vs_coalescent('dtwf_2_pops_2', [500, 500], [20, 0], int(1e7), 1e-8)
     verifier.add_dtwf_vs_coalescent('dtwf_3_pops', [500, 500, 500], [5, 5, 5], int(1e6), 1e-8)
     verifier.add_dtwf_vs_coalescent('dtwf_3_pops_2', [500, 500, 500], [20, 0, 0], int(1e6), 1e-8)
-    verifier.add_dtwf_vs_coalescent_3_pops()
-    # verifier.add_dtwf_vs_coalescent_2_pops_high_recomb()
-    verifier.add_dtwf_vs_coalescent_2_pop_growth()
-    verifier.add_dtwf_vs_coalescent_2_pop_shrink()
+
+    migration_matrix = [[0, 0.2, 0.1], [0.1, 0, 0.2], [0.2, 0.1, 0]]
+    verifier.add_dtwf_vs_coalescent('dtwf_3_pops_asymm_mig', [500, 500, 500], [20, 0, 0], int(1e7), 1e-8,
+            migration_matrix=migration_matrix, num_replicates=500)
+    migration_matrix = [[0, 0.1, 0.05], [0.1, 0, 0.1], [0.1, 0.2, 0]]
+    verifier.add_dtwf_vs_coalescent('dtwf_3_pops_asymm_mig_2', [500, 500, 500], [10, 10, 10], int(1e7), 1e-8,
+            migration_matrix=migration_matrix, num_replicates=500)
+    migration_matrix = [[0, 0.05, 0.05], [0.1, 0, 0.2], [0.05, 0.05, 0]]
+    verifier.add_dtwf_vs_coalescent('dtwf_3_pops_asymm_mig_3', [500, 500, 500], [10, 10, 0], int(1e7), 1e-8,
+            migration_matrix=migration_matrix, num_replicates=500)
+
+    migration_matrix = [[0, 0.5], [0.7, 0]]
+    verifier.add_dtwf_vs_coalescent('dtwf_2_pops_asymm_mig_1', [5000, 5000], [10, 10], int(1e7), 1e-8,
+            migration_matrix=migration_matrix, num_replicates=100, growth_rates=[0.005, 0.005])
 
     keys = None
     if len(sys.argv) > 1:
