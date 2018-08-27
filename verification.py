@@ -818,9 +818,18 @@ class SimulationVerifier(object):
                 print(i)
             output = subprocess.check_output(cmd, shell=True)
             ts = msprime.load(outfile)
+            tables = ts.dump_tables()
+            tables.nodes.individual = None
+            tables.individuals.clear()
+
+            samples = np.random.choice(np.arange(ts.num_samples, dtype=np.int32),
+                    size=slim_args['num_samples'], replace=False)
+            tables.simplify(samples)
+            ts = tables.tree_sequence()
+
             t_mrca = np.zeros(ts.num_trees)
             for tree in ts.trees():
-                t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS'] - 2
+                t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS']
             data["tmrca_mean"].append(np.mean(t_mrca))
             data["num_trees"].append(ts.num_trees)
             data["model"].append("slim")
@@ -838,7 +847,7 @@ class SimulationVerifier(object):
             pyplot.close('all')
 
 
-    def add_dtwf_vs_slim(self, key, pop_size, num_loci,
+    def add_dtwf_vs_slim(self, key, pop_size, num_samples, num_loci,
             recombination_rate, num_replicates=None):
         """
         Generic test of DTWF vs SLiM WF simulator
@@ -876,11 +885,12 @@ class SimulationVerifier(object):
 
         population_configurations = [
                     msprime.PopulationConfiguration(
-                        sample_size=pop_size,
+                        sample_size=num_samples,
                         initial_size=pop_size,
                         growth_rate=0
                         )
                     ]
+        slim_args['num_samples'] = num_samples
         slim_args['POP_SIZE'] = pop_size
         slim_args['NGENS'] = pop_size * 30
 
@@ -1288,8 +1298,9 @@ def main():
             migration_matrix=migration_matrix, num_replicates=100, growth_rates=[0.005, 0.005])
 
     # DTWF checks against SLiM
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', 10, 1, 0)
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', 10, 1e7, 1e-8, num_replicates=400)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', 10, 10, 1, 0)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', 10, 10, 1e7, 1e-8, num_replicates=400)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region_2', 100, 10, 1e7, 1e-8, num_replicates=200)
 
     keys = None
     if len(sys.argv) > 1:
