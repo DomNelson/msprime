@@ -632,7 +632,6 @@ class SimulationVerifier(object):
         pyplot.savefig(filename)
         pyplot.close('all')
 
-
     def run_dtwf_coalescent_comparison(self, test_name, **kwargs):
         df = pd.DataFrame()
         for model in ["hudson", "dtwf"]:
@@ -683,37 +682,6 @@ class SimulationVerifier(object):
                 "dtwf_vs_coalescent_low_recombination", sample_size=10, Ne=1000,
                 num_replicates=100, recombination_rate=0.01)
         self._instances["dtwf_vs_coalescent_low_recombination"] = f
-
-    def add_dtwf_vs_coalescent_3_pops(self):
-        """
-        TODO: Reset to original test
-        Checks the DTWF against coalescent in two small populations
-        """
-        Ne = 500
-        sample_size = 10
-        num_loci = int(1e7)
-        recombination_rate = 1e-8
-
-        population_configurations = [
-            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01),
-            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01),
-            msprime.PopulationConfiguration(sample_size=sample_size, initial_size=Ne, growth_rate=0.01)]
-        recombination_map = msprime.RecombinationMap(
-                [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
-        migration_matrix = [
-                [0, 0.1, 0.1],
-                [0.1, 0, 0.1],
-                [0.1, 0.1, 0]]
-
-        def f():
-            self.run_dtwf_coalescent_comparison(
-                    "dtwf_vs_coalescent_3_pops",
-                    population_configurations=population_configurations,
-                    migration_matrix=migration_matrix,
-                    num_replicates=200,
-                    recombination_map=recombination_map,
-                    )
-        self._instances["dtwf_vs_coalescent_3_pops"] = f
 
     def add_dtwf_vs_coalescent(self, key, initial_sizes, sample_sizes, num_loci,
             recombination_rate, migration_matrix=None,
@@ -780,25 +748,6 @@ class SimulationVerifier(object):
                 recombination_map=recombination_map)
         self._instances["dtwf_vs_coalescent_2_pops_massmigration"] = f
 
-    def add_dtwf_vs_coalescent_2_pops_high_recomb(self):
-        population_configurations = [
-            msprime.PopulationConfiguration(sample_size=1, initial_size=1000),
-            msprime.PopulationConfiguration(sample_size=1, initial_size=1000)]
-        recombination_map = msprime.RecombinationMap(
-                [0, int(5e7)], [1e-8, 0], num_loci=int(5e7))
-        demographic_events = [
-            msprime.MassMigration(
-                            time=100, source=1, destination=0, proportion=1.0)]
-        def f():
-            self.run_dtwf_coalescent_comparison(
-                "dtwf_vs_coalescent_2_pops_high_recomb",
-                population_configurations=population_configurations,
-                demographic_events=demographic_events,
-                recombination_map=recombination_map,
-                Ne=0.5,
-                num_replicates=200)
-        self._instances["dtwf_vs_coalescent_2_pops_high_recomb"] = f
-
     def add_dtwf_vs_coalescent_2_pop_growth(self):
         population_configurations = [
             msprime.PopulationConfiguration(
@@ -836,6 +785,120 @@ class SimulationVerifier(object):
                 demographic_events=demographic_events,
                 num_replicates=300)
         self._instances["dtwf_vs_coalescent_2_pop_shrink"] = f
+
+    def run_dtwf_slim_comparison(self, test_name, slim_args, **kwargs):
+
+        df = pd.DataFrame()
+
+        kwargs["model"] = "dtwf"
+        print("Running: ", kwargs)
+        replicates = msprime.simulate(**kwargs)
+        data = collections.defaultdict(list)
+        for ts in replicates:
+            t_mrca = np.zeros(ts.num_trees)
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root)
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("dtwf")
+
+        basedir = os.path.join("tmp__NOBACKUP__", test_name)
+        if not os.path.exists(basedir):
+            os.mkdir(basedir)
+
+        slim_script = os.path.join(basedir, "slim_script.txt")
+        outfile=os.path.join(basedir, "slim.trees")
+        slim_args['OUTFILE'] = outfile
+        with open(slim_script, 'w') as f:
+            f.write(slim_args['str'].format(**slim_args))
+
+        cmd = "slim " + slim_script
+        for i in range(kwargs['num_replicates']):
+            if i % 10 == 0:
+                print(i)
+            output = subprocess.check_output(cmd, shell=True)
+            ts = msprime.load(outfile)
+            t_mrca = np.zeros(ts.num_trees)
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS'] - 2
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("slim")
+        df = df.append(pd.DataFrame(data))
+
+        df_slim = df[df.model == "slim"]
+        df_dtwf = df[df.model == "dtwf"]
+        for stat in ["tmrca_mean", "num_trees"]:
+            v1 = df_slim[stat]
+            v2 = df_dtwf[stat]
+            sm.graphics.qqplot(v1)
+            sm.qqplot_2samples(v1, v2, line="45")
+            f = os.path.join(basedir, "{}.png".format(stat))
+            pyplot.savefig(f, dpi=72)
+            pyplot.close('all')
+
+
+    def add_dtwf_vs_slim(self, key, pop_size, num_loci,
+            recombination_rate, num_replicates=None):
+        """
+        Generic test of DTWF vs SLiM WF simulator
+        """
+        slim_args = {}
+        slim_args['str'] = ("// set up a simple neutral simulation\n"
+            "initialize()\n"
+            "{{\n"
+            "initializeTreeSeq();\n"
+            "initializeMutationRate(0);\n"
+            "initializeMutationType('m1', 0.5, 'f', 0.0);\n"
+            "// g1 genomic element type: uses m1 for all mutations\n"
+            "initializeGenomicElementType('g1', m1, 1.0);\n"
+            "// uniform chromosome\n"
+            "initializeGenomicElement(g1, 0, {NUM_LOCI});\n"
+            "// uniform recombination along the chromosome\n"
+            "initializeRecombinationRate({RHO});\n"
+            "}}\n"
+            "// create a population\n"
+            "1\n"
+            "{{\n"
+                "sim.addSubpop('p1', {POP_SIZE});\n"
+            "}}\n"
+            "// run for set number of generations\n"
+            "{NGENS}\n"
+            "{{\n"
+                "sim.simulationFinished();\n"
+                "sim.treeSeqOutput('{OUTFILE}');\n"
+            "}}\n")
+        # assert len(sample_sizes) == len(initial_sizes)
+        # num_pops = len(sample_sizes)
+
+        if num_replicates is None:
+            num_replicates = 200
+
+        population_configurations = [
+                    msprime.PopulationConfiguration(
+                        sample_size=pop_size,
+                        initial_size=pop_size,
+                        growth_rate=0
+                        )
+                    ]
+        slim_args['POP_SIZE'] = pop_size
+        slim_args['NGENS'] = pop_size * 30
+
+        num_loci = int(num_loci)
+        recombination_map = msprime.RecombinationMap(
+                [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
+        slim_args['RHO'] = recombination_rate
+        slim_args['NUM_LOCI'] = num_loci
+
+
+        def f():
+            self.run_dtwf_slim_comparison(
+                    key, slim_args,
+                    population_configurations=population_configurations,
+                    num_replicates=num_replicates,
+                    recombination_map=recombination_map,
+                    )
+        self._instances[key] = f
 
     def _get_xi_dirac_mutation_stats(self, sample_size, num_repeat, mut_rate, rec_rate, num_loci):
         # TODO Fix this! We can write the output to a proper temporary file, or
@@ -1223,6 +1286,10 @@ def main():
     migration_matrix = [[0, 0.5], [0.7, 0]]
     verifier.add_dtwf_vs_coalescent('dtwf_2_pops_asymm_mig_1', [5000, 5000], [10, 10], int(1e7), 1e-8,
             migration_matrix=migration_matrix, num_replicates=100, growth_rates=[0.005, 0.005])
+
+    # DTWF checks against SLiM
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', 10, 1, 0)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', 10, 1e7, 1e-8, num_replicates=400)
 
     keys = None
     if len(sys.argv) > 1:
