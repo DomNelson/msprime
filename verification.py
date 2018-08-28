@@ -58,6 +58,61 @@ def get_predicted_variance(n, R):
     return R * harmonic_number(n - 1) + 2 * res
 
 
+def write_slim_script(outfile, format_dict):
+    slim_str = ("// set up a simple neutral simulation\n"
+        "initialize()\n"
+        "{{\n"
+        "initializeTreeSeq();\n"
+        "initializeMutationRate(0);\n"
+        "initializeMutationType('m1', 0.5, 'f', 0.0);\n"
+        "// g1 genomic element type: uses m1 for all mutations\n"
+        "initializeGenomicElementType('g1', m1, 1.0);\n"
+        "// uniform chromosome\n"
+        "initializeGenomicElement(g1, 0, {NUM_LOCI});\n"
+        "// uniform recombination along the chromosome\n"
+        "initializeRecombinationRate({RHO});\n"
+        "}}\n"
+        "// create a population\n"
+        "1\n"
+        "{{\n"
+        "{POP_STRS};\n"
+        "}}\n"
+        "// run for set number of generations\n"
+        "{NGENS}\n"
+        "{{\n"
+            "sim.simulationFinished();\n"
+            "sim.treeSeqOutput('{OUTFILE}');\n"
+        "}}\n")
+
+    with open(outfile, 'w') as f:
+        f.write(slim_str.format(**format_dict))
+
+
+def subsample_simplify_slim_treesequence(ts, sample_sizes):
+    tables = ts.dump_tables()
+    samples = set(ts.samples())
+    num_populations = len(set(tables.nodes.population))
+    assert len(sample_sizes) == num_populations
+
+    subsample = []
+    for i, size in enumerate(sample_sizes):
+        ss = np.where(tables.nodes.population == i)[0]
+        ss = list(samples.intersection(ss))
+        try:
+            ss = np.random.choice(ss, replace=False, size=size)
+        except:
+            import IPython; IPython.embed()
+            raise
+        subsample.extend(ss)
+
+    tables.nodes.individual = None
+    tables.individuals.clear()
+    tables.simplify(subsample)
+    ts = tables.tree_sequence()
+
+    return ts
+
+
 class SimulationVerifier(object):
     """
     Class to compare msprime against ms to ensure that the same distributions
@@ -809,8 +864,7 @@ class SimulationVerifier(object):
         slim_script = os.path.join(basedir, "slim_script.txt")
         outfile=os.path.join(basedir, "slim.trees")
         slim_args['OUTFILE'] = outfile
-        with open(slim_script, 'w') as f:
-            f.write(slim_args['str'].format(**slim_args))
+        write_slim_script(slim_script, slim_args)
 
         cmd = "slim " + slim_script
         for i in range(kwargs['num_replicates']):
@@ -818,14 +872,17 @@ class SimulationVerifier(object):
                 print(i)
             output = subprocess.check_output(cmd, shell=True)
             ts = msprime.load(outfile)
-            tables = ts.dump_tables()
-            tables.nodes.individual = None
-            tables.individuals.clear()
 
-            samples = np.random.choice(np.arange(ts.num_samples, dtype=np.int32),
-                    size=slim_args['num_samples'], replace=False)
-            tables.simplify(samples)
-            ts = tables.tree_sequence()
+            # tables = ts.dump_tables()
+            # tables.nodes.individual = None
+            # tables.individuals.clear()
+            #
+            # samples = np.random.choice(np.arange(ts.num_samples, dtype=np.int32),
+            #         size=slim_args['num_samples'], replace=False)
+            # tables.simplify(samples)
+            # ts = tables.tree_sequence()
+
+            ts = subsample_simplify_slim_treesequence(ts, slim_args['sample_sizes'])
 
             t_mrca = np.zeros(ts.num_trees)
             for tree in ts.trees():
@@ -847,52 +904,60 @@ class SimulationVerifier(object):
             pyplot.close('all')
 
 
-    def add_dtwf_vs_slim(self, key, pop_size, num_samples, num_loci,
-            recombination_rate, num_replicates=None):
+
+    def add_dtwf_vs_slim(self, key, sample_sizes, initial_sizes, num_loci,
+            recombination_rate, migration_matrix=None, num_replicates=None):
         """
-        Generic test of DTWF vs SLiM WF simulator
+        Generic test of DTWF vs SLiM WF simulator, without growth rates
         """
+        assert len(sample_sizes) == len(initial_sizes)
+        num_pops = len(sample_sizes)
+
         slim_args = {}
-        slim_args['str'] = ("// set up a simple neutral simulation\n"
-            "initialize()\n"
-            "{{\n"
-            "initializeTreeSeq();\n"
-            "initializeMutationRate(0);\n"
-            "initializeMutationType('m1', 0.5, 'f', 0.0);\n"
-            "// g1 genomic element type: uses m1 for all mutations\n"
-            "initializeGenomicElementType('g1', m1, 1.0);\n"
-            "// uniform chromosome\n"
-            "initializeGenomicElement(g1, 0, {NUM_LOCI});\n"
-            "// uniform recombination along the chromosome\n"
-            "initializeRecombinationRate({RHO});\n"
-            "}}\n"
-            "// create a population\n"
-            "1\n"
-            "{{\n"
-                "sim.addSubpop('p1', {POP_SIZE});\n"
-            "}}\n"
-            "// run for set number of generations\n"
-            "{NGENS}\n"
-            "{{\n"
-                "sim.simulationFinished();\n"
-                "sim.treeSeqOutput('{OUTFILE}');\n"
-            "}}\n")
-        # assert len(sample_sizes) == len(initial_sizes)
-        # num_pops = len(sample_sizes)
 
         if num_replicates is None:
             num_replicates = 200
 
-        population_configurations = [
+        slim_args['sample_sizes'] = sample_sizes
+        slim_args['NGENS'] = max(initial_sizes) * 30
+
+        population_configurations = []
+        slim_args['POP_STRS'] = ''
+        for i in range(len(sample_sizes)):
+            population_configurations.append(
                     msprime.PopulationConfiguration(
-                        sample_size=num_samples,
-                        initial_size=pop_size,
+                        sample_size=sample_sizes[i],
+                        initial_size=initial_sizes[i],
                         growth_rate=0
                         )
-                    ]
-        slim_args['num_samples'] = num_samples
-        slim_args['POP_SIZE'] = pop_size
-        slim_args['NGENS'] = pop_size * 30
+                    )
+            slim_args['POP_STRS'] += "sim.addSubpop('p{i}', {N});\n".format(
+                    i=i, N=initial_sizes[i])
+
+        if migration_matrix is None:
+            default_mig_rate = 0.1
+            migration_matrix = []
+            for i in range(num_pops):
+                row = [default_mig_rate] * num_pops
+                row[i] = 0
+                migration_matrix.append(row)
+
+        ## SLiM rates are 'immigration' forwards in time, which matches
+        ## DTWF backwards-time 'emmigration'
+        assert(len(migration_matrix) == num_pops)
+        if num_pops > 1:
+            for i in range(num_pops):
+                row = migration_matrix[i]
+                indices = [j for j in range(num_pops) if j != i]
+                pop_names = ['p' + str(j) for j in indices]
+                rates = [str(row[j]) for j in indices]
+
+                to_pop_str = ','.join(pop_names)
+                rate_str = ','.join(rates)
+
+                mig_str = "p{}.setMigrationRates(c({}), c({}));\n".format(
+                        i, to_pop_str, rate_str)
+                slim_args['POP_STRS'] += mig_str
 
         num_loci = int(num_loci)
         recombination_map = msprime.RecombinationMap(
@@ -905,6 +970,7 @@ class SimulationVerifier(object):
             self.run_dtwf_slim_comparison(
                     key, slim_args,
                     population_configurations=population_configurations,
+                    migration_matrix=migration_matrix,
                     num_replicates=num_replicates,
                     recombination_map=recombination_map,
                     )
@@ -1298,9 +1364,11 @@ def main():
             migration_matrix=migration_matrix, num_replicates=100, growth_rates=[0.005, 0.005])
 
     # DTWF checks against SLiM
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', 10, 10, 1, 0)
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', 10, 10, 1e7, 1e-8, num_replicates=400)
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region_2', 100, 10, 1e7, 1e-8, num_replicates=200)
+    # verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', 10, 10, 1, 0)
+    # verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', 10, 10, 1e7, 1e-8, num_replicates=400)
+    # verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region_2', 100, 10, 1e7, 1e-8, num_replicates=200)
+    # verifier.add_dtwf_vs_slim('dtwf_vs_slim_long_region', 100, 10, 1e8, 1e-8, num_replicates=200)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops', [10, 10], [50, 50], 1e7, 1e-8, num_replicates=200)
 
     keys = None
     if len(sys.argv) > 1:
