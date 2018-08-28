@@ -98,11 +98,7 @@ def subsample_simplify_slim_treesequence(ts, sample_sizes):
     for i, size in enumerate(sample_sizes):
         ss = np.where(tables.nodes.population == i)[0]
         ss = list(samples.intersection(ss))
-        try:
-            ss = np.random.choice(ss, replace=False, size=size)
-        except:
-            import IPython; IPython.embed()
-            raise
+        ss = np.random.choice(ss, replace=False, size=size)
         subsample.extend(ss)
 
     tables.nodes.individual = None
@@ -867,26 +863,28 @@ class SimulationVerifier(object):
         write_slim_script(slim_script, slim_args)
 
         cmd = "slim " + slim_script
-        for i in range(kwargs['num_replicates']):
+        i = 0
+        while i < kwargs['num_replicates']:
+        # for i in range(kwargs['num_replicates']):
             if i % 10 == 0:
                 print(i)
             output = subprocess.check_output(cmd, shell=True)
             ts = msprime.load(outfile)
-
-            # tables = ts.dump_tables()
-            # tables.nodes.individual = None
-            # tables.individuals.clear()
-            #
-            # samples = np.random.choice(np.arange(ts.num_samples, dtype=np.int32),
-            #         size=slim_args['num_samples'], replace=False)
-            # tables.simplify(samples)
-            # ts = tables.tree_sequence()
-
             ts = subsample_simplify_slim_treesequence(ts, slim_args['sample_sizes'])
 
             t_mrca = np.zeros(ts.num_trees)
-            for tree in ts.trees():
-                t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS']
+            try:
+                for tree in ts.trees():
+                    t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS']
+            except ValueError:
+                ## Assuming this is due to multiple roots in the tree - 
+                ## increase number of generations and run again
+                slim_args['NGENS'] = slim_args['NGENS'] * 2
+                print("Doubling SLiM generations to", slim_args['NGENS'])
+                write_slim_script(slim_script, slim_args)
+                continue
+
+            i += 1
             data["tmrca_mean"].append(np.mean(t_mrca))
             data["num_trees"].append(ts.num_trees)
             data["model"].append("slim")
