@@ -2368,15 +2368,21 @@ msp_store_simultaneous_migration_events(msp_t *self, avl_tree_t *nodes,
     source = &self->populations[source_pop].ancestors;
 
     j = (uint32_t) gsl_rng_uniform_int(self->rng, avl_count(source));
+    printf("Migrating node %u of %d\n", j, avl_count(source));
     node = avl_at(source, j);
+    assert(node != NULL);
+    printf("Found migrating node\n");
 
-    /* // Unlink node from population */
+    // Unlink node from population
     /* ind = (segment_t *) node->item; */
-    /* avl_unlink_node(source, node); */
+    avl_unlink_node(source, node);
+    printf("Unlinked migrating node\n");
     /* msp_free_avl_node(self, node); */
-    /*  */
-    /* // Insert in avl tree */
-    /* node = avl_insert_node(nodes, node); */
+
+    // Insert in avl tree
+    node = avl_insert_node(nodes, node);
+    printf("Inserted migrating node\n");
+    assert(node == NULL);
     /* assert(node != NULL); */
 
     return ret;
@@ -2434,9 +2440,10 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                 avl_init_tree(nodes, cmp_individual, NULL);
 
                 n = avl_count(&self->populations[j].ancestors);
+                printf("%d possible nodes to migrate\n", n);
                 mu = self->migration_matrix[j * self->num_populations + k];
                 /* mu = n * self->migration_matrix[j * self->num_populations + k]; */
-                if (mu == 0) {
+                if (mu == 0 || n == 0) {
                     continue;
                 }
                 printf("Pop %u: %u lineages choosing migrations\n", j, n);
@@ -2451,10 +2458,10 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                         mig_source_pop = (population_id_t) j;
                         mig_dest_pop = (population_id_t) k;
                         printf("Migrating from %u to %u\n", mig_source_pop, mig_dest_pop);
-                        ret = msp_migration_event(self, mig_source_pop, mig_dest_pop);
-                        if (ret != 0) {
-                            goto out;
-                        }
+                        /* ret = msp_migration_event(self, mig_source_pop, mig_dest_pop); */
+                        /* if (ret != 0) { */
+                        /*     goto out; */
+                        /* } */
                         ret = msp_store_simultaneous_migration_events(
                                 self, nodes, mig_source_pop);
                         if (ret != 0) {
