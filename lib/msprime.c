@@ -2262,17 +2262,15 @@ msp_dtwf_generation(msp_t *self)
             continue;
         }
         /* For the DTWF, N for each population is the reference population size
-         * from the model multiplied by the current population size, rounded
-         * to the nearest integer. Thus, the population's size is always relative
+         * from the model multiplied by the current population size, rounded to
+         * the nearest integer. Thus, the population's size is always relative
          * to the reference model population size (which is also true for the
          * coalescent models. */
-        // This may not be ideal, but with low migration / high growth rates it is possible for
-        // populations to reach zero individuals before all lineages coalesce. We round up to
-        // avoid this.
+        // This may not be ideal, but with low migration / high growth rates it
+        // is possible for populations to reach zero individuals before all
+        // lineages coalesce. We round up to avoid this.
         N = (uint32_t) ceil(
             msp_get_population_size(self, pop) * self->model.population_size);
-        /* printf("%u parents to choose from %f \n", N, msp_get_population_size(self, pop)); */
-        printf("Pop %u: %u lineages choosing from %u parents\n", j, avl_count(&pop->ancestors), N);
         if (N == 0) {
             ret = MSP_ERR_INFINITE_WAITING_TIME;
             goto out;
@@ -2291,7 +2289,6 @@ msp_dtwf_generation(msp_t *self)
             s = segment_mem + segment_mem_offset;
             segment_mem_offset++;
             p = (uint32_t) gsl_rng_uniform_int(self->rng, N);
-            /* printf("Choosing parent %d\n", p); */
             if (parents[p] != NULL) {
                 self->num_ca_events++;
             }
@@ -2310,7 +2307,6 @@ msp_dtwf_generation(msp_t *self)
                 msp_free_avl_node(self, node);
 
                 // Recombine ancestor
-
                 if (self->recombination_rate > 0) {
                     ret = msp_dtwf_recombine(self, x, &u[0], &u[1]);
                     if (ret != 0) {
@@ -2361,27 +2357,19 @@ msp_store_simultaneous_migration_events(msp_t *self, avl_tree_t *nodes,
        population_id_t source_pop) {
     int ret = 0;
     uint32_t j;
-    /* segment_t *ind, *x; */
     avl_node_t *node;
     avl_tree_t *source;
         
     source = &self->populations[source_pop].ancestors;
 
+    // Choose node to migrate
     j = (uint32_t) gsl_rng_uniform_int(self->rng, avl_count(source));
-    printf("Migrating node %u of %d\n", j, avl_count(source));
     node = avl_at(source, j);
     assert(node != NULL);
-    printf("Found migrating node\n");
 
-    // Unlink node from population
-    /* ind = (segment_t *) node->item; */
+    // Move to temp storage for actual migration later
     avl_unlink_node(source, node);
-    printf("Unlinked migrating node\n");
-    /* msp_free_avl_node(self, node); */
-
-    // Insert in avl tree
     node = avl_insert_node(nodes, node);
-    printf("Inserted migrating node\n");
     assert(node != NULL);
 
     return ret;
@@ -2398,14 +2386,10 @@ msp_simultaneous_migration_event(msp_t *self, avl_tree_t *nodes,
     self->num_migration_events[index]++;
 
     // Iterate through nodes in tree and move to new pop
-    // -- removed from source tree in move_individual
-    int i = 0;
-    while (avl_count(nodes) > 0 && i < 10) {
-        printf("Moving node to pop %u\n", dest_pop);
+    // -- removed from "nodes" in msp_move_individual()
+    while (avl_count(nodes) > 0) {
         node = nodes->head;
         ret = msp_move_individual(self, node, nodes, dest_pop);
-        printf("%d nodes left to migrate\n", avl_count(nodes));
-        i++;
     }
 
     return ret;
@@ -2420,7 +2404,7 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
     int mig_source_pop, mig_dest_pop;
     sampling_event_t *se;
     double mu;
-    uint32_t j, k, i, num_migrations, n;
+    uint32_t j, k, i, n;
     avl_tree_t *node_trees = NULL;
     avl_tree_t *nodes;
 
@@ -2429,7 +2413,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             && self->time < max_time && events < max_events) {
         events++;
         self->time++;
-        printf("---%f---\n", self->time);
         ret = msp_dtwf_generation(self);
         if (ret != 0) {
             goto out;
@@ -2439,7 +2422,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
          * happen in! Do migrations come before or after the actual breeding?
          * Given a sampling event at time t, does this happen before or after
          * the breeding for time t? Same for all demographic events */
-
         node_trees = malloc(self->num_populations * self->num_populations
                 * sizeof(avl_tree_t));
         if (node_trees == NULL){
@@ -2456,13 +2438,10 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                 avl_init_tree(nodes, cmp_individual, NULL);
 
                 n = avl_count(&self->populations[j].ancestors);
-                printf("%d possible nodes to migrate\n", n);
                 mu = self->migration_matrix[j * self->num_populations + k];
-                /* mu = n * self->migration_matrix[j * self->num_populations + k]; */
                 if (mu == 0 || n == 0) {
                     continue;
                 }
-                printf("Pop %u: %u lineages choosing migrations\n", j, n);
                 /* Also, is this the correct model? */
                 for (i = 0; i < n; i++) {
                     /* m[j, k] is the rate at which migrants move from
@@ -2473,8 +2452,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                     if (gsl_rng_uniform(self->rng) < mu) {
                         mig_source_pop = (population_id_t) j;
                         mig_dest_pop = (population_id_t) k;
-                        printf("Migrating from %u to %u\n",
-                                mig_source_pop, mig_dest_pop);
                         ret = msp_store_simultaneous_migration_events(
                                 self, nodes, mig_source_pop);
                         if (ret != 0) {
@@ -2487,8 +2464,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
         for (j = 0; j < self->num_populations; j++) {
             for (k = 0; k < self->num_populations; k++) {
                 nodes = &node_trees[j * self->num_populations + k];
-                printf("%d nodes to migrate from pop %u to %u\n",
-                        avl_count(nodes), j, k);
                 mig_source_pop = (population_id_t) j;
                 mig_dest_pop = (population_id_t) k;
                 ret = msp_simultaneous_migration_event(
@@ -2499,7 +2474,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             }
         }
 
-        /* assert(1 == 0); */
         if (self->next_sampling_event < self->num_sampling_events) {
             if (self->sampling_events[self->next_sampling_event].time >= self->time) {
                 se = self->sampling_events + self->next_sampling_event;
@@ -2520,13 +2494,11 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                 }
             }
         }
-        printf("Freeing nodes\n");
         free(node_trees);
         node_trees = NULL;
     }
 out:
     if (node_trees != NULL) {
-        printf("Freeing nodes on fail\n");
         free(node_trees);
     }
     return ret;
