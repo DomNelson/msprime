@@ -2382,22 +2382,34 @@ msp_store_simultaneous_migration_events(msp_t *self, avl_tree_t *nodes,
     // Insert in avl tree
     node = avl_insert_node(nodes, node);
     printf("Inserted migrating node\n");
-    assert(node == NULL);
-    /* assert(node != NULL); */
+    assert(node != NULL);
 
     return ret;
 }
 
-/* static int WARN_UNUSED */
-/* msp_conduct_simultaneous_migration_events(msp_t *self, avl_tree_t *nodes, population_id_t dest_pop) { */
-    /* size_t index = ((size_t) source_pop) * self->num_populations + (size_t) dest_pop; */
-    /* self->num_migration_events[index]++; */
-/*     // Iterate through nodes in tree and move to new pop */
-/*     // -- removed from source tree in move_individual */
-/*     msp_move_individual(msp_t *self, avl_node_t *node, avl_tree_t *source, */
-/*         dest_pop); */
-/*  */
-/* } */
+static int WARN_UNUSED
+msp_simultaneous_migration_event(msp_t *self, avl_tree_t *nodes,
+        population_id_t source_pop, population_id_t dest_pop) {
+    int ret = 0;
+    avl_node_t *node;
+    size_t index;
+
+    index = ((size_t) source_pop) * self->num_populations + (size_t) dest_pop;
+    self->num_migration_events[index]++;
+
+    // Iterate through nodes in tree and move to new pop
+    // -- removed from source tree in move_individual
+    int i = 0;
+    while (avl_count(nodes) > 0 && i < 10) {
+        printf("Moving node to pop %u\n", dest_pop);
+        node = nodes->head;
+        ret = msp_move_individual(self, node, nodes, dest_pop);
+        printf("%d nodes left to migrate\n", avl_count(nodes));
+        i++;
+    }
+
+    return ret;
+}
 
 /* The main event loop for the Wright Fisher model. */
 static int WARN_UNUSED
@@ -2409,7 +2421,7 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
     sampling_event_t *se;
     double mu;
     uint32_t j, k, i, num_migrations, n;
-    avl_tree_t *node_trees;
+    avl_tree_t *node_trees = NULL;
     avl_tree_t *nodes;
 
 
@@ -2430,6 +2442,10 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
 
         node_trees = malloc(self->num_populations * self->num_populations
                 * sizeof(avl_tree_t));
+        if (node_trees == NULL){
+            ret = MSP_ERR_NO_MEMORY;
+            goto out;
+        }
 
         mig_source_pop = 0;
         mig_dest_pop = 0;
@@ -2457,11 +2473,8 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                     if (gsl_rng_uniform(self->rng) < mu) {
                         mig_source_pop = (population_id_t) j;
                         mig_dest_pop = (population_id_t) k;
-                        printf("Migrating from %u to %u\n", mig_source_pop, mig_dest_pop);
-                        /* ret = msp_migration_event(self, mig_source_pop, mig_dest_pop); */
-                        /* if (ret != 0) { */
-                        /*     goto out; */
-                        /* } */
+                        printf("Migrating from %u to %u\n",
+                                mig_source_pop, mig_dest_pop);
                         ret = msp_store_simultaneous_migration_events(
                                 self, nodes, mig_source_pop);
                         if (ret != 0) {
@@ -2471,6 +2484,22 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                 }
             }
         }
+        for (j = 0; j < self->num_populations; j++) {
+            for (k = 0; k < self->num_populations; k++) {
+                nodes = &node_trees[j * self->num_populations + k];
+                printf("%d nodes to migrate from pop %u to %u\n",
+                        avl_count(nodes), j, k);
+                mig_source_pop = (population_id_t) j;
+                mig_dest_pop = (population_id_t) k;
+                ret = msp_simultaneous_migration_event(
+                        self, nodes, mig_source_pop, mig_dest_pop);
+                if (ret != 0) {
+                    goto out;
+                }
+            }
+        }
+
+        /* assert(1 == 0); */
         if (self->next_sampling_event < self->num_sampling_events) {
             if (self->sampling_events[self->next_sampling_event].time >= self->time) {
                 se = self->sampling_events + self->next_sampling_event;
