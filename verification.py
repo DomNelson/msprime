@@ -910,7 +910,7 @@ class SimulationVerifier(object):
                             growth_rate=growth_rate,
                             population_id=pop_id))
 
-            if random.random() < 0.5:
+            if random.random() < 0.5 and N >= 2:
                 rate = random.uniform(0.1, 0.5)
                 index = tuple(np.random.choice(
                         range(num_populations), size=2, replace=False))
@@ -1478,7 +1478,9 @@ def main():
     verifier.add_dtwf_vs_coalescent_random_instance("dtwf_vs_coalescent_random_2",
             num_populations=3, num_replicates=200, num_demographic_events=3)
     verifier.add_dtwf_vs_coalescent_random_instance("dtwf_vs_coalescent_random_3",
-            num_populations=2, num_replicates=200, num_demographic_events=8)
+            num_populations=2, num_replicates=200, num_demographic_events=6)
+    verifier.add_dtwf_vs_coalescent_random_instance("dtwf_vs_coalescent_random_4",
+            num_populations=1, num_replicates=200, num_demographic_events=8)
 
     # DTWF checks against SLiM
     # Note that SLiM models discrete loci while msprime emulates
