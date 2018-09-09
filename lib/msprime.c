@@ -2413,10 +2413,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             && self->time < max_time && events < max_events) {
         events++;
         self->time++;
-        ret = msp_dtwf_generation(self);
-        if (ret != 0) {
-            goto out;
-        }
 
         /* TODO Need to reason more carefully about what order these events
          * happen in! Do migrations come before or after the actual breeding?
@@ -2496,6 +2492,11 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
         }
         free(node_trees);
         node_trees = NULL;
+
+        ret = msp_dtwf_generation(self);
+        if (ret != 0) {
+            goto out;
+        }
     }
 out:
     if (node_trees != NULL) {
