@@ -2521,8 +2521,11 @@ msp_simultaneous_migration_event(msp_t *self, avl_tree_t *nodes,
     while (avl_count(nodes) > 0) {
         node = nodes->head;
         ret = msp_move_individual(self, node, nodes, dest_pop);
+        if (ret != 0) {
+            goto out;
+        }
     }
-
+out:
     return ret;
 }
 
@@ -2628,9 +2631,7 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
         }
     }
 out:
-    if (node_trees != NULL) {
-        free(node_trees);
-    }
+    msp_safe_free(node_trees);
     return ret;
 }
 
