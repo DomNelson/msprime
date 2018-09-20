@@ -111,6 +111,27 @@ def subsample_simplify_slim_treesequence(ts, sample_sizes):
     return ts
 
 
+def slim_check_version():
+    ## This may not be robust but it's a start
+    min_version = 3.1
+
+    try:
+        raw_str = subprocess.check_output('slim -version', shell=True)
+    except subprocess.CalledProcessError:
+        print("\nError running slim - is it installed and in your $PATH?\n")
+        raise
+
+    version_list = str.split(str(raw_str))
+
+    for i in range(len(version_list)):
+        if version_list[i].lower() == 'version':
+            version_str = version_list[i+1]
+            break
+
+    version = float(version_str.strip(' ,'))
+    assert version >= min_version, "Require SLiM >= 3.1!"
+
+
 class SimulationVerifier(object):
     """
     Class to compare msprime against ms to ensure that the same distributions
@@ -1319,7 +1340,7 @@ class SimulationVerifier(object):
             t_mrca = np.zeros(ts.num_trees)
             try:
                 for tree in ts.trees():
-                    t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS']
+                    t_mrca[tree.index] = tree.time(tree.root)
             except ValueError:
                 ## Assuming this is due to multiple roots in the tree - 
                 ## increase number of generations and run again
@@ -1351,9 +1372,10 @@ class SimulationVerifier(object):
         """
         Generic test of DTWF vs SLiM WF simulator, without growth rates
         """
+        slim_check_version()
         assert len(sample_sizes) == len(initial_sizes)
-        num_pops = len(sample_sizes)
 
+        num_pops = len(sample_sizes)
         slim_args = {}
 
         if num_replicates is None:
