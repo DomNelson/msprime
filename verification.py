@@ -64,7 +64,7 @@ def write_slim_script(outfile, format_dict):
     slim_str = ("// set up a simple neutral simulation\n"
         "initialize()\n"
         "{{\n"
-        "initializeTreeSeq();\n"
+        "initializeTreeSeq(checkCoalescence=T);\n"
         "initializeMutationRate(0);\n"
         "initializeMutationType('m1', 0.5, 'f', 0.0);\n"
         "// g1 genomic element type: uses m1 for all mutations\n"
@@ -77,17 +77,37 @@ def write_slim_script(outfile, format_dict):
         "// create a population\n"
         "1\n"
         "{{\n"
-        "{POP_STRS};\n"
+        "    {POP_STRS}\n"
         "}}\n"
         "// run for set number of generations\n"
-        "{NGENS}\n"
-        "{{\n"
-            "sim.simulationFinished();\n"
-            "sim.treeSeqOutput('{OUTFILE}');\n"
-        "}}\n")
+        "1: late() {{\n"
+        "    if (sim.treeSeqCoalesced())\n"
+        "    {{\n"
+        "        sim.simulationFinished();\n"
+        "        sim.treeSeqOutput('{OUTFILE}');\n"
+        "    }}\n"
+        "}}\n"
+        "100000 late() {{\n"
+        "    catn('NO SLIM COALESCENCE BY GENERATION 100000');\n"
+        "}}")
 
     with open(outfile, 'w') as f:
         f.write(slim_str.format(**format_dict))
+
+def slim_check_version():
+    ## This may not be robust but it's a start
+    min_version = 3.1
+
+    raw_str = subprocess.check_output('slim -version', shell=True)
+    version_list = str.split(str(raw_str))
+
+    for i in range(len(version_list)):
+        if version_list[i].lower() == 'version':
+            version_str = version_list[i+1]
+            break
+
+    version = float(version_str.strip(' ,'))
+    assert version >= min_version, "Require SLiM >= 3.1!"
 
 
 def subsample_simplify_slim_treesequence(ts, sample_sizes):
@@ -1303,6 +1323,7 @@ class SimulationVerifier(object):
 
 
     def run_dtwf_slim_comparison(self, test_name, slim_args, **kwargs):
+        slim_check_version()
 
         df = pd.DataFrame()
 
@@ -1328,9 +1349,7 @@ class SimulationVerifier(object):
         write_slim_script(slim_script, slim_args)
 
         cmd = "slim " + slim_script
-        i = 0
-        while i < kwargs['num_replicates']:
-        # for i in range(kwargs['num_replicates']):
+        for i in range(kwargs['num_replicates']):
             if i % 10 == 0:
                 print(i)
             output = subprocess.check_output(cmd, shell=True)
@@ -1338,21 +1357,13 @@ class SimulationVerifier(object):
             ts = subsample_simplify_slim_treesequence(ts, slim_args['sample_sizes'])
 
             t_mrca = np.zeros(ts.num_trees)
-            try:
-                for tree in ts.trees():
-                    t_mrca[tree.index] = tree.time(tree.root)
-            except ValueError:
-                ## Assuming this is due to multiple roots in the tree - 
-                ## increase number of generations and run again
-                slim_args['NGENS'] = slim_args['NGENS'] * 2
-                print("Doubling SLiM generations to", slim_args['NGENS'])
-                write_slim_script(slim_script, slim_args)
-                continue
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root)
 
-            i += 1
             data["tmrca_mean"].append(np.mean(t_mrca))
             data["num_trees"].append(ts.num_trees)
             data["model"].append("slim")
+
         df = df.append(pd.DataFrame(data))
 
         df_slim = df[df.model == "slim"]
@@ -1382,8 +1393,6 @@ class SimulationVerifier(object):
             num_replicates = 200
 
         slim_args['sample_sizes'] = sample_sizes
-        slim_args['NGENS'] = max(initial_sizes) * 30
-
         population_configurations = []
         slim_args['POP_STRS'] = ''
         for i in range(len(sample_sizes)):
