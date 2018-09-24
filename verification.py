@@ -1045,6 +1045,59 @@ class SimulationVerifier(object):
             duration = time.perf_counter() - before
             print("Final sim required {:.2f} sec".format(duration))
 
+    def run_hybrid_coalescent_comparison(self, test_name, num_dtwf_gens, **kwargs):
+        df = pd.DataFrame()
+
+        ## Hudson-only simulations
+        kwargs["model"] = "hudson"
+        print("Running: ", kwargs)
+        replicates = msprime.simulate(**kwargs)
+        data = collections.defaultdict(list)
+        for ts in replicates:
+            t_mrca = np.zeros(ts.num_trees)
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root)
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("hudson")
+        df = df.append(pd.DataFrame(data))
+
+        ## Hybrid simulations
+        kwargs["model"] = "dtwf"
+        print("Running: ", kwargs)
+        replicates = msprime.simulate(__tmp_max_time=num_dtwf_gens, **kwargs)
+
+        kwargs["model"] = "hudson"
+        kwargs["num_replicates"] = None
+        for pop_conf in kwargs["population_configurations"]:
+            pop_conf.sample_size = None
+
+        data = collections.defaultdict(list)
+        for initial_ts in replicates:
+            ts = msprime.simulate(from_ts=initial_ts, **kwargs)
+            t_mrca = np.zeros(ts.num_trees)
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root)
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("hybrid")
+        df = df.append(pd.DataFrame(data))
+
+        basedir = os.path.join("tmp__NOBACKUP__", test_name)
+        if not os.path.exists(basedir):
+            os.mkdir(basedir)
+
+        df_hudson = df[df.model == "hudson"]
+        df_hybrid = df[df.model == "hybrid"]
+        for stat in ["tmrca_mean", "num_trees"]:
+            v1 = df_hudson[stat]
+            v2 = df_hybrid[stat]
+            sm.graphics.qqplot(v1)
+            sm.qqplot_2samples(v1, v2, line="45")
+            f = os.path.join(basedir, "{}.png".format(stat))
+            pyplot.savefig(f, dpi=72)
+            pyplot.close('all')
+
     def run_dtwf_coalescent_comparison(self, test_name, **kwargs):
         df = pd.DataFrame()
         for model in ["hudson", "dtwf"]:
@@ -1095,6 +1148,51 @@ class SimulationVerifier(object):
                 "dtwf_vs_coalescent_low_recombination", sample_size=10, Ne=1000,
                 num_replicates=100, recombination_rate=0.01)
         self._instances["dtwf_vs_coalescent_low_recombination"] = f
+
+    def add_hybrid_vs_coalescent(self, key, initial_sizes, sample_sizes, num_loci,
+            recombination_rate, num_dtwf_gens=50, migration_matrix=None,
+            growth_rates=None, num_replicates=200):
+        """
+        Generic test of hybrid DTWF/hudson vs hudson coalescent alone
+        """
+        assert len(sample_sizes) == len(initial_sizes)
+        num_pops = len(sample_sizes)
+
+        if growth_rates is None:
+            default_growth_rate = 0.01
+            growth_rates = [default_growth_rate] * num_pops
+
+        population_configurations = []
+        for s_size, i_size, g_rate in zip(sample_sizes, initial_sizes, growth_rates):
+            population_configurations.append(
+                    msprime.PopulationConfiguration(
+                        sample_size=s_size,
+                        initial_size=i_size,
+                        growth_rate=g_rate
+                        )
+                    )
+
+        recombination_map = msprime.RecombinationMap(
+                [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
+
+        if migration_matrix is None:
+            default_mig_rate = 0.01
+            migration_matrix = []
+            for i in range(num_pops):
+                row = [default_mig_rate] * num_pops
+                row[i] = 0
+                migration_matrix.append(row)
+
+        def f():
+            self.run_hybrid_coalescent_comparison(
+                    key,
+                    num_dtwf_gens=num_dtwf_gens,
+                    population_configurations=population_configurations,
+                    migration_matrix=migration_matrix,
+                    num_replicates=num_replicates,
+                    recombination_map=recombination_map
+                    )
+        self._instances[key] = f
 
     def add_dtwf_vs_coalescent(self, key, initial_sizes, sample_sizes, num_loci,
             recombination_rate, migration_matrix=None,
@@ -1936,6 +2034,9 @@ def main():
     migration_matrix = [[0, 0.7, 0.4], [0.9, 0, 0.6], [0.5, 0.9, 0]]
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_3_pops_high_mig_3', [100, 100, 50], [10, 1, 1], 1e13, 1e-14,
             migration_matrix=migration_matrix, num_replicates=200)
+
+    ## Hybrid DTWF/Hudson vs Hudson alone
+    verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_single_locus', [1000], [10], 1, 0, num_replicates=200)
 
     keys = None
     if len(sys.argv) > 1:
