@@ -1157,6 +1157,7 @@ class SimulationVerifier(object):
         """
         assert len(sample_sizes) == len(initial_sizes)
         num_pops = len(sample_sizes)
+        num_loci = int(num_loci)
 
         if growth_rates is None:
             default_growth_rate = 0.01
@@ -1464,6 +1465,150 @@ class SimulationVerifier(object):
             pyplot.savefig(f, dpi=72)
             pyplot.close('all')
 
+    def run_hybrid_slim_comparison(self, test_name, num_dtwf_gens, slim_args, **kwargs):
+        df = pd.DataFrame()
+
+        basedir = os.path.join("tmp__NOBACKUP__", test_name)
+        if not os.path.exists(basedir):
+            os.mkdir(basedir)
+
+        slim_script = os.path.join(basedir, "slim_script.txt")
+        outfile=os.path.join(basedir, "slim.trees")
+        slim_args['OUTFILE'] = outfile
+        write_slim_script(slim_script, slim_args)
+
+        data = collections.defaultdict(list)
+        cmd = "slim " + slim_script
+        i = 0
+        while i < kwargs['num_replicates']:
+        # for i in range(kwargs['num_replicates']):
+            if i % 10 == 0:
+                print(i)
+            output = subprocess.check_output(cmd, shell=True)
+            ts = msprime.load(outfile)
+            ts = subsample_simplify_slim_treesequence(ts, slim_args['sample_sizes'])
+
+            t_mrca = np.zeros(ts.num_trees)
+            try:
+                for tree in ts.trees():
+                    t_mrca[tree.index] = tree.time(tree.root)
+            except ValueError:
+                ## Assuming this is due to multiple roots in the tree - 
+                ## increase number of generations and run again
+                slim_args['NGENS'] = slim_args['NGENS'] * 2
+                print("Doubling SLiM generations to", slim_args['NGENS'])
+                write_slim_script(slim_script, slim_args)
+                continue
+
+            i += 1
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("slim")
+
+        ## Hybrid simulations
+        kwargs["model"] = "dtwf"
+        print("Running: ", kwargs)
+        replicates = msprime.simulate(__tmp_max_time=num_dtwf_gens, **kwargs)
+
+        kwargs["model"] = "hudson"
+        kwargs["num_replicates"] = None
+        for pop_conf in kwargs["population_configurations"]:
+            pop_conf.sample_size = None
+
+        for initial_ts in replicates:
+            ts = msprime.simulate(from_ts=initial_ts, **kwargs)
+            t_mrca = np.zeros(ts.num_trees)
+            for tree in ts.trees():
+                t_mrca[tree.index] = tree.time(tree.root)
+            data["tmrca_mean"].append(np.mean(t_mrca))
+            data["num_trees"].append(ts.num_trees)
+            data["model"].append("hybrid")
+
+        df = df.append(pd.DataFrame(data))
+        df_slim = df[df.model == "slim"]
+        df_dtwf = df[df.model == "hybrid"]
+
+        for stat in ["tmrca_mean", "num_trees"]:
+            v1 = df_slim[stat]
+            v2 = df_dtwf[stat]
+            sm.graphics.qqplot(v1)
+            sm.qqplot_2samples(v1, v2, line="45")
+            f = os.path.join(basedir, "{}.png".format(stat))
+            pyplot.savefig(f, dpi=72)
+            pyplot.close('all')
+
+    def add_hybrid_vs_slim(self, key, initial_sizes, sample_sizes, num_loci,
+            recombination_rate, num_dtwf_gens=50, migration_matrix=None,
+            num_replicates=None):
+        """
+        Generic test of hybrid DTWF/Hudson vs SLiM WF simulator, without growth rates
+        """
+        slim_check_version()
+        assert len(sample_sizes) == len(initial_sizes)
+
+        num_pops = len(sample_sizes)
+        slim_args = {}
+
+        if num_replicates is None:
+            num_replicates = 200
+
+        slim_args['sample_sizes'] = sample_sizes
+        slim_args['NGENS'] = max(initial_sizes) * 30
+
+        population_configurations = []
+        slim_args['POP_STRS'] = ''
+        for i in range(len(sample_sizes)):
+            population_configurations.append(
+                    msprime.PopulationConfiguration(
+                        sample_size=sample_sizes[i],
+                        initial_size=initial_sizes[i],
+                        growth_rate=0
+                        )
+                    )
+            slim_args['POP_STRS'] += "sim.addSubpop('p{i}', {N});\n".format(
+                    i=i, N=initial_sizes[i])
+
+        if migration_matrix is None:
+            default_mig_rate = 0.1
+            migration_matrix = []
+            for i in range(num_pops):
+                row = [default_mig_rate] * num_pops
+                row[i] = 0
+                migration_matrix.append(row)
+
+        ## SLiM rates are 'immigration' forwards in time, which matches
+        ## DTWF backwards-time 'emmigration'
+        assert(len(migration_matrix) == num_pops)
+        if num_pops > 1:
+            for i in range(num_pops):
+                row = migration_matrix[i]
+                indices = [j for j in range(num_pops) if j != i]
+                pop_names = ['p' + str(j) for j in indices]
+                rates = [str(row[j]) for j in indices]
+
+                to_pop_str = ','.join(pop_names)
+                rate_str = ','.join(rates)
+
+                mig_str = "p{}.setMigrationRates(c({}), c({}));\n".format(
+                        i, to_pop_str, rate_str)
+                slim_args['POP_STRS'] += mig_str
+
+        num_loci = int(num_loci)
+        recombination_map = msprime.RecombinationMap(
+                [0, num_loci], [recombination_rate, 0], num_loci=num_loci)
+        slim_args['RHO'] = recombination_rate
+        slim_args['NUM_LOCI'] = num_loci
+
+
+        def f():
+            self.run_hybrid_slim_comparison(
+                    key, num_dtwf_gens, slim_args,
+                    population_configurations=population_configurations,
+                    migration_matrix=migration_matrix,
+                    num_replicates=num_replicates,
+                    recombination_map=recombination_map,
+                    )
+        self._instances[key] = f
 
     def add_dtwf_vs_slim(self, key, initial_sizes, sample_sizes, num_loci,
             recombination_rate, migration_matrix=None, num_replicates=None):
@@ -2037,6 +2182,17 @@ def main():
 
     ## Hybrid DTWF/Hudson vs Hudson alone
     verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_single_locus', [1000], [10], 1, 0, num_replicates=200)
+    verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_short_region', [1000], [10], 1e6, 1e-8, num_dtwf_gens=10, num_replicates=500)
+    verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_long_region', [1000], [10], 1e8, 1e-8, num_dtwf_gens=50, num_replicates=100)
+    verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_2_pops_1', [100, 100], [10, 10], 1e7, 1e-8, num_dtwf_gens=50, num_replicates=200)
+
+    ## Hybrid DTWF/Hudson vs SLiM
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_single_locus', [10], [10], 1, 0, num_replicates=200)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_short_region', [10], [10], 1e7, 1e-8, num_dtwf_gens=100, num_replicates=400)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_short_region_2', [100], [10], 1e7, 1e-8, num_replicates=200)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_long_region', [100], [10], 1e8, 1e-8, num_replicates=200)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_long_region_large_pop', [1000], [10], 1e8, 1e-8, num_dtwf_gens=50, num_replicates=100)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_2_pops_1', [100, 100], [10, 10], 1e7, 1e-8, num_dtwf_gens=50, num_replicates=200)
 
     keys = None
     if len(sys.argv) > 1:
