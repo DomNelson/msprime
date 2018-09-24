@@ -2181,18 +2181,32 @@ def main():
             migration_matrix=migration_matrix, num_replicates=200)
 
     ## Hybrid DTWF/Hudson vs Hudson alone
+    ## TODO: Need to adjust pop initial_size to account for growth rate after model switch
     verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_single_locus', [1000], [10], 1, 0, num_replicates=200)
     verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_short_region', [1000], [10], 1e6, 1e-8, num_dtwf_gens=10, num_replicates=500)
     verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_long_region', [1000], [10], 1e8, 1e-8, num_dtwf_gens=50, num_replicates=100)
     verifier.add_hybrid_vs_coalescent('hybrid_vs_hudson_2_pops_1', [100, 100], [10, 10], 1e7, 1e-8, num_dtwf_gens=50, num_replicates=200)
 
+    migration_matrix = [[0, 0.5, 0.6], [0.7, 0, 0.2], [0.4, 0.8, 0]]
+    verifier.add_hybrid_vs_coalescent('hybrid_vs_coalescent_3_pops_high_asymm_mig_1', [1000, 1000, 1000], [20, 5, 10], int(5e4), 1e-8,
+            num_dtwf_gens=100, migration_matrix=migration_matrix, num_replicates=300, growth_rates=[0.0, 0.0, 0.0])
+
     ## Hybrid DTWF/Hudson vs SLiM
+    ## TODO: Need to adjust pop initial_size to account for growth rate after model switch
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_single_locus', [10], [10], 1, 0, num_replicates=200)
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_short_region', [10], [10], 1e7, 1e-8, num_dtwf_gens=100, num_replicates=400)
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_short_region_2', [100], [10], 1e7, 1e-8, num_replicates=200)
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_long_region', [100], [10], 1e8, 1e-8, num_replicates=200)
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_long_region_large_pop', [1000], [10], 1e8, 1e-8, num_dtwf_gens=50, num_replicates=100)
     verifier.add_hybrid_vs_slim('hybrid_vs_slim_2_pops_1', [100, 100], [10, 10], 1e7, 1e-8, num_dtwf_gens=50, num_replicates=200)
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_2_pops_2', [10, 10], [1, 1], 5e8, 1e-8, num_dtwf_gens=200, num_replicates=500)
+
+    migration_matrix = [[0, 0.1, 0.2], [0.2, 0, 0.1], [0.5, 0.3, 0]]
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_2_pops_3', [10, 50, 10], [20, 1, 1], 1e7, 1e-8,
+            num_dtwf_gens=100, migration_matrix=migration_matrix, num_replicates=500)
+    migration_matrix = [[0, 0.1, 0.05], [0.2, 0, 0.3], [0.1, 0.4, 0]]
+    verifier.add_hybrid_vs_slim('hybrid_vs_slim_2_pops_4', [10, 30, 20], [5, 5, 10], 1e8, 1e-8,
+            num_dtwf_gens=200, migration_matrix=migration_matrix, num_replicates=500)
 
     keys = None
     if len(sys.argv) > 1:
