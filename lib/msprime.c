@@ -2404,7 +2404,10 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
     int mig_source_pop, mig_dest_pop;
     sampling_event_t *se;
     double mu;
-    uint32_t j, k, i, n;
+    uint32_t j, k, i, N;
+    unsigned int n[self->num_populations];
+    double mig_tmp[self->num_populations];
+    double sum;
     avl_tree_t *node_trees = NULL;
     avl_tree_t *nodes;
 
@@ -2413,6 +2416,11 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             && self->time < max_time && events < max_events) {
         events++;
         self->time++;
+
+        ret = msp_dtwf_generation(self);
+        if (ret != 0) {
+            goto out;
+        }
 
         /* TODO Need to reason more carefully about what order these events
          * happen in! Do migrations come before or after the actual breeding?
@@ -2428,37 +2436,62 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
         mig_source_pop = 0;
         mig_dest_pop = 0;
         for (j = 0; j < self->num_populations; j++) {
+            N = avl_count(&self->populations[j].ancestors);
+            for (uint32_t z = 0; z < self->num_populations; z++) {
+                mig_tmp[z] = self->migration_matrix[j * self->num_populations + z];
+            }
+
+            // For proper sampling, we need to calculate the proportion
+            // of non-migrants as well
+            sum = 0;
+            for (uint32_t z = 0; z < self->num_populations; z++) {
+                sum += mig_tmp[z];
+            }
+            assert(mig_tmp[j] == 0);
+            mig_tmp[j] = 1 - sum;
+
+            gsl_ran_multinomial(self->rng, self->num_populations, N, mig_tmp, n);
+
+            /* printf("%f\n", self->time); */
+            /* printf("Migrations drawn:\n"); */
+            /* for (uint32_t z = 0; z < self->num_populations; z++) { */
+            /*     printf("%f, %d\n", mig_tmp[z], n[z]); */
+            /* } */
+
             for (k = 0; k < self->num_populations; k++) {
+                if (k == j) {
+                    continue;
+                }
                 // Initialize an avl tree for this pair of populations
                 nodes = &node_trees[j * self->num_populations + k];
                 avl_init_tree(nodes, cmp_individual, NULL);
+                mig_source_pop = (population_id_t) j;
+                mig_dest_pop = (population_id_t) k;
 
-                n = avl_count(&self->populations[j].ancestors);
-                mu = self->migration_matrix[j * self->num_populations + k];
-                if (mu == 0 || n == 0) {
-                    continue;
-                }
+                /* mu = self->migration_matrix[j * self->num_populations + k]; */
+                /* if (mu == 0 || N == 0) { */
+                /*     continue; */
+                /* } */
                 /* Also, is this the correct model? */
-                for (i = 0; i < n; i++) {
+                for (i = 0; i < n[k]; i++) {
                     /* m[j, k] is the rate at which migrants move from
                      * population k to j forwards in time. Backwards
                      * in time, we move the individual from from
                      * population j into population k.
                      */
-                    if (gsl_rng_uniform(self->rng) < mu) {
-                        mig_source_pop = (population_id_t) j;
-                        mig_dest_pop = (population_id_t) k;
-                        ret = msp_store_simultaneous_migration_events(
-                                self, nodes, mig_source_pop);
-                        if (ret != 0) {
-                            goto out;
-                        }
+                    ret = msp_store_simultaneous_migration_events(
+                            self, nodes, mig_source_pop);
+                    if (ret != 0) {
+                        goto out;
                     }
                 }
             }
         }
         for (j = 0; j < self->num_populations; j++) {
             for (k = 0; k < self->num_populations; k++) {
+                if (k == j) {
+                    continue;
+                }
                 nodes = &node_trees[j * self->num_populations + k];
                 mig_source_pop = (population_id_t) j;
                 mig_dest_pop = (population_id_t) k;
@@ -2492,11 +2525,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
         }
         free(node_trees);
         node_trees = NULL;
-
-        ret = msp_dtwf_generation(self);
-        if (ret != 0) {
-            goto out;
-        }
     }
 out:
     if (node_trees != NULL) {

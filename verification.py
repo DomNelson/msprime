@@ -978,7 +978,7 @@ class SimulationVerifier(object):
             t_mrca = np.zeros(ts.num_trees)
             try:
                 for tree in ts.trees():
-                    t_mrca[tree.index] = tree.time(tree.root) + slim_args['NGENS']
+                    t_mrca[tree.index] = tree.time(tree.root)# + slim_args['NGENS']
             except ValueError:
                 ## Assuming this is due to multiple roots in the tree - 
                 ## increase number of generations and run again
@@ -1450,6 +1450,8 @@ def main():
     verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_2_pops_2', [500, 500], [20, 0], int(1e7), 1e-8)
     verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops', [500, 500, 500], [5, 5, 5], int(1e6), 1e-8)
     verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops_2', [500, 500, 500], [20, 0, 0], int(1e6), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops_3', [500, 5000, 1000], [20, 5, 5], int(1e7), 1e-8)
+    verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_4_pops', [500, 500, 500, 500], [5, 5, 5, 5], int(1e6), 1e-8)
 
     migration_matrix = [[0, 0.2, 0.1], [0.1, 0, 0.2], [0.2, 0.1, 0]]
     verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops_asymm_mig', [500, 500, 500], [20, 0, 0], int(1e7), 1e-8,
@@ -1459,6 +1461,9 @@ def main():
             migration_matrix=migration_matrix, num_replicates=500)
     migration_matrix = [[0, 0.05, 0.05], [0.1, 0, 0.2], [0.05, 0.05, 0]]
     verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops_asymm_mig_3', [500, 500, 500], [10, 10, 0], int(1e7), 1e-8,
+            migration_matrix=migration_matrix, num_replicates=500)
+    migration_matrix = [[0, 0.05, 0.05], [0.1, 0, 0.2], [0.05, 0.05, 0]]
+    verifier.add_dtwf_vs_coalescent('dtwf_vs_coalescent_3_pops_asymm_mig_4', [1000, 500, 500], [10, 5, 5], int(1e8), 1e-8,
             migration_matrix=migration_matrix, num_replicates=500)
 
     migration_matrix = [[0, 0.5], [0.7, 0]]
@@ -1489,7 +1494,7 @@ def main():
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_single_locus', [10], [10], 1, 0)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region', [10], [10], 1e7, 1e-8, num_replicates=400)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_short_region_2', [100], [10], 1e7, 1e-8, num_replicates=200)
-    verifier.add_dtwf_vs_slim('dtwf_vs_slim_long_region', [100], [10], 1e8, 1e-8, num_replicates=200)
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_long_region', [100], [10], 3e8, 1e-8, num_replicates=200)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_1', [100, 100], [10, 1], 1e7, 1e-8, num_replicates=200)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_2', [100, 100], [10, 10], 1e8, 1e-8, num_replicates=200)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_3', [100, 10], [1, 1], 5e8, 1e-8, num_replicates=100)
@@ -1498,6 +1503,8 @@ def main():
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_4_many_loci', [100, 100], [10, 10], 5e14, 1e-14, num_replicates=100)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_5', [10, 10], [1, 1], 5e8, 1e-8, num_replicates=500)
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_pops_5_many_loci', [10, 10], [1, 1], 5e14, 1e-14, num_replicates=500)
+
+    verifier.add_dtwf_vs_slim('dtwf_vs_slim_3_pops_1', [10, 10, 10], [5, 1, 1], 1e7, 1e-8, num_replicates=200)
 
     migration_matrix = [[0, 0.9], [0.9, 0]]
     verifier.add_dtwf_vs_slim('dtwf_vs_slim_2_small_pops_high_mig', [1, 1], [1, 1], 1, 0,
