@@ -2738,10 +2738,12 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
     unsigned long events = 0;
     int mig_source_pop, mig_dest_pop;
     sampling_event_t *se;
-    uint32_t j, k, i, N;
-    unsigned int *n = NULL;
-    double *mig_tmp = NULL;
+    uint32_t j, k, i, l, N;
+    uint32_t pop_num_inds;
+    unsigned int *n;
+    double *mig_tmp;
     double sum;
+    double pop_num_lineages, prop_active_lineages;
     avl_tree_t *node_trees = NULL;
     avl_tree_t *nodes;
     /* Only support a single structured coalescent label at the moment */
@@ -2749,10 +2751,6 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
 
     n = malloc(self->num_populations * sizeof(int));
     mig_tmp = malloc(self->num_populations * sizeof(double));
-    if (n == NULL || mig_tmp == NULL) {
-        ret  = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
 
     while (msp_get_num_ancestors(self) > 0
             && self->time < max_time && events < max_events) {
@@ -2774,16 +2772,19 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
             // For proper sampling, we need to calculate the proportion
             // of non-migrants as well
             sum = 0;
-            for (k = 0; k < self->num_populations; k++) {
-                mig_tmp[k] = self->migration_matrix[j * self->num_populations + k];
-                sum += mig_tmp[k];
+            for (uint32_t z = 0; z < self->num_populations; z++) {
+                mig_tmp[z] = self->migration_matrix[j * self->num_populations + z];
+                sum += mig_tmp[z];
             }
             assert(mig_tmp[j] == 0);
-
             mig_tmp[j] = 1 - sum;
+
             N = avl_count(&self->populations[j].ancestors[label]);
+            pop_num_lineages = msp_get_population_size(self, &self->populations[j]);
+            pop_num_inds = pop_num_lineages / 2;
+
             gsl_ran_multinomial(
-                    self->rng, self->num_populations, N, mig_tmp, n);
+                    self->rng, self->num_populations, pop_num_inds, mig_tmp, n);
 
             for (k = 0; k < self->num_populations; k++) {
                 if (k == j) {
@@ -2802,10 +2803,20 @@ msp_run_dtwf(msp_t *self, double max_time, unsigned long max_events)
                 mig_dest_pop = (population_id_t) k;
 
                 for (i = 0; i < n[k]; i++) {
-                    ret = msp_store_simultaneous_migration_events(
-                            self, nodes, mig_source_pop, label);
-                    if (ret != 0) {
-                        goto out;
+                    // Sample two active/inactive lineages for this migrant
+                    for (l = 0; l < 2; l++) {
+                        prop_active_lineages = ((double) N) / ((double) pop_num_lineages);
+                        if (gsl_rng_uniform(self->rng) < prop_active_lineages) {
+                            ret = msp_store_simultaneous_migration_events(
+                                    self, nodes, mig_source_pop, label);
+                            if (ret != 0) {
+                                goto out;
+                            }
+                            N--;
+                            pop_num_lineages--;
+                        } else {
+                            pop_num_lineages--;
+                        }
                     }
                 }
             }
