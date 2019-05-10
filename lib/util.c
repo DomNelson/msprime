@@ -145,6 +145,10 @@ msp_strerror_internal(int err)
         case MSP_ERR_UNSUPPORTED_OPERATION:
             ret = "Current simulation configuration is not supported.";
             break;
+        case MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK:
+            ret = "Bottleneck events are not supported in Wright-Fisher sims, "
+                "but can be implemented as changes in population sizes.";
+            break;
 
         default:
             ret = "Error occurred generating error string. Please file a bug "

@@ -770,6 +770,79 @@ test_demographic_events(void)
 }
 
 static void
+test_dtwf_bottleneck_events(void)
+{
+    int ret;
+    uint32_t n = 10;
+    uint32_t j;
+    sample_t *samples = malloc(n * sizeof(sample_t));
+    msp_t msp;
+    gsl_rng *rng = gsl_rng_alloc(gsl_rng_default);
+    recomb_map_t recomb_map;
+    tsk_table_collection_t tables;
+
+    CU_ASSERT_FATAL(samples != NULL);
+    CU_ASSERT_FATAL(rng != NULL);
+    ret = recomb_map_alloc_uniform(&recomb_map, 1, 1.0, 1);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+    ret = tsk_table_collection_init(&tables, 0);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+    for (j = 0; j < n; j++) {
+        samples[j].time = j;
+        samples[j].population_id = 0;
+    }
+
+    ret = msp_alloc(&msp, n, samples, &recomb_map, &tables, rng);
+    CU_ASSERT_EQUAL(ret, 0);
+
+    ret = msp_set_num_populations(&msp, 1);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_set_population_configuration(&msp, 0, 10, 0.1);
+    CU_ASSERT_EQUAL(ret, 0);
+
+    /* Bottlenecks are unsupported in DTWF, and if added before model is set
+     * throw an error when enacted */
+    ret = msp_add_simple_bottleneck(&msp, 0.8, 0, 0.5);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_set_simulation_model_dtwf(&msp, 1);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_initialise(&msp);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_run(&msp, DBL_MAX, ULONG_MAX);
+    CU_ASSERT_EQUAL(ret, MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK);
+
+    ret = msp_reset(&msp);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_set_simulation_model_hudson(&msp, 1);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_add_instantaneous_bottleneck(&msp, 0.9, 0, 1.0);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_set_simulation_model_dtwf(&msp, 1);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_run(&msp, DBL_MAX, ULONG_MAX);
+    CU_ASSERT_EQUAL(ret, MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK);
+
+    /* If model is already set, an error is thrown on adding the event */
+    ret = msp_reset(&msp);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_set_simulation_model_dtwf(&msp, 1);
+    CU_ASSERT_EQUAL(ret, 0);
+    ret = msp_add_simple_bottleneck(&msp, 0.8, 0, 0.5);
+    CU_ASSERT_EQUAL(ret, MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK);
+    ret = msp_add_instantaneous_bottleneck(&msp, 0.9, 0, 1.0);
+    CU_ASSERT_EQUAL(ret, MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK);
+
+    ret = msp_free(&msp);
+    CU_ASSERT_EQUAL(ret, 0);
+
+    gsl_rng_free(rng);
+    free(samples);
+    recomb_map_free(&recomb_map);
+    tsk_table_collection_free(&tables);
+}
+
+static void
 test_demographic_events_start_time(void)
 {
     int ret;
@@ -3060,6 +3133,7 @@ main(int argc, char **argv)
         {"test_multi_locus_bottleneck_arg", test_multi_locus_bottleneck_arg},
         {"test_mixed_model_simulation", test_mixed_model_simulation},
         {"test_dtwf_deterministic", test_dtwf_deterministic},
+        {"test_dtwf_bottleneck_events", test_dtwf_bottleneck_events},
         {"test_single_sweep_errors", test_single_sweep_errors},
         {"test_single_sweep", test_single_sweep},
         {"test_single_sweep_growth", test_single_sweep_growth},

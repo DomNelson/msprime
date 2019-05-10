@@ -3846,6 +3846,11 @@ msp_simple_bottleneck(msp_t *self, demographic_event_t *event)
         ret = MSP_ERR_ASSERTION_FAILED;
         goto out;
     }
+    /* Wouldn't have been caught if model was set after adding the event */
+    if (self->model.type == MSP_MODEL_DTWF) {
+        ret = MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK;
+        goto out;
+    }
     avl_init_tree(&Q, cmp_segment_queue, NULL);
     /*
      * Find the individuals that descend from the common ancestor
@@ -3891,6 +3896,11 @@ msp_add_simple_bottleneck(msp_t *self, double time, int population_id, double pr
     int ret = 0;
     demographic_event_t *de;
     int N = (int) self->num_populations;
+
+    if (self->model.type == MSP_MODEL_DTWF) {
+        ret = MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK;
+        goto out;
+    }
 
     if (population_id < 0 || population_id >= N) {
         ret = MSP_ERR_POPULATION_OUT_OF_BOUNDS;
@@ -3939,6 +3949,11 @@ msp_instantaneous_bottleneck(msp_t *self, demographic_event_t *event)
     /* This should have been caught on adding the event */
     if (population_id < 0 || population_id >= N) {
         ret = MSP_ERR_ASSERTION_FAILED;
+        goto out;
+    }
+    /* Wouldn't have been caught if model was set after adding the event */
+    if (self->model.type == MSP_MODEL_DTWF) {
+        ret = MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK;
         goto out;
     }
     pop = &self->populations[population_id].ancestors[label];
@@ -4066,6 +4081,11 @@ msp_add_instantaneous_bottleneck(msp_t *self, double time, int population_id,
     demographic_event_t *de;
     int N = (int) self->num_populations;
     simulation_model_t *model = &self->model;
+
+    if (self->model.type == MSP_MODEL_DTWF) {
+        ret = MSP_ERR_DTWF_UNSUPPORTED_BOTTLENECK;
+        goto out;
+    }
 
     if (population_id < 0 || population_id >= N) {
         ret = MSP_ERR_POPULATION_OUT_OF_BOUNDS;
