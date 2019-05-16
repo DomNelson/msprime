@@ -160,6 +160,14 @@ typedef struct {
     double *rates;
 } recomb_map_t;
 
+typedef struct {
+    size_t num_inds;
+    uint32_t *inds;
+    uint32_t *parents;
+    uint32_t *sexes;
+    uint32_t *populations;
+} ped_t;
+
 typedef struct _msp_t {
     gsl_rng *rng;
     /* input parameters */
@@ -178,6 +186,7 @@ typedef struct _msp_t {
     simulation_model_t initial_model;
     double *initial_migration_matrix;
     population_t *initial_populations;
+    ped_t *pedigree;
     /* allocation block sizes */
     size_t avl_node_block_size;
     size_t node_mapping_block_size;

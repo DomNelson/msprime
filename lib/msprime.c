@@ -456,6 +456,8 @@ msp_alloc(msp_t *self,
     self->demographic_events_tail = NULL;
     self->next_demographic_event = NULL;
     self->state = MSP_STATE_NEW;
+    /* Set up pedigree */
+    self->pedigree = NULL;
 out:
     return ret;
 }
