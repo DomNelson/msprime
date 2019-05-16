@@ -165,6 +165,7 @@ typedef struct {
     uint32_t *inds;
     uint32_t *parents;
     uint32_t *sexes;
+    double *times;
     uint32_t *populations;
 } ped_t;
 

@@ -2388,6 +2388,99 @@ out:
 }
 
 static int
+Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parents,
+        PyObject *py_sexes, PyObject *py_times, PyObject *py_populations)
+{
+    int ret = -1;
+    int err;
+    size_t num_populations, j, num_inds;
+    PyObject *inds_value, *parents_value, *sexes_value;
+    PyObject *times_value, *populations_value;
+    double *inds, *parents, *sexes, *times, *populations = NULL;
+
+    num_populations = msp_get_num_populations(self->sim);
+    num_inds = PyList_Size(py_inds);
+    if (PyList_Size(py_parents) != num_inds ||
+            PyList_Size(py_sexes) != num_inds ||
+            PyList_Size(py_times) != num_inds ||
+            PyList_Size(py_populations) != num_inds) {
+        PyErr_Format(PyExc_ValueError,
+            "All pedigree columns must be the same length.");
+        goto out;
+    }
+    inds = PyMem_Malloc(num_inds * sizeof(uint32_t));
+    parents = PyMem_Malloc(2 * num_inds * sizeof(uint32_t));
+    sexes = PyMem_Malloc(num_inds * sizeof(uint32_t));
+    times = PyMem_Malloc(num_inds * sizeof(double));
+    populations = PyMem_Malloc(num_inds * sizeof(uint32_t));
+    if (inds == NULL || parents == NULL || sexes == NULL ||
+            times == NULL || populations == NULL) {
+        PyErr_NoMemory();
+        goto out;
+    }
+    if (Simulator_check_sim(self) != 0) {
+        goto out;
+    }
+
+    for (j = 0; j < num_inds; j++) {
+        inds_value = PyList_GetItem(py_inds, j);
+        parents_value = PyList_GetItem(py_parents, j);
+        sexes_value = PyList_GetItem(py_sexes, j);
+        times_value = PyList_GetItem(py_times, j);
+        populations_value = PyList_GetItem(py_populations, j);
+
+        if (!PyNumber_Check(times_value)) {
+            PyErr_Format(PyExc_TypeError, "Individual time not a number");
+            goto out;
+        }
+        if (!PyNumber_Check(populations_value)) {
+            PyErr_Format(PyExc_TypeError, "Population IDs must be numbers");
+            goto out;
+        }
+
+        inds[j] = PyFloat_AsDouble(inds_value);
+        parents[j] = PyFloat_AsDouble(parents_value);
+        sexes[j] = PyFloat_AsDouble(sexes_value);
+        times[j] = PyFloat_AsDouble(times_value);
+        populations[j] = PyFloat_AsDouble(populations_value);
+
+        if (times[j] < 0.0) {
+            PyErr_Format(PyExc_ValueError, "Negative times not permitted");
+            goto out;
+        }
+        if (populations[j] >= num_populations) {
+            PyErr_Format(PyExc_ValueError, "Populations must be specified in the "
+                    "range 0, ..., num_pops - 1.");
+            goto out;
+        }
+    }
+    err = msp_set_pedigree(self->sim, num_inds, inds, parents, sexes, times,
+            populations);
+    if (err != 0) {
+        handle_input_error(err);
+        goto out;
+    }
+    ret = 0;
+out:
+    if (inds != NULL) {
+        PyMem_Free(inds);
+    }
+    if (parents != NULL) {
+        PyMem_Free(parents);
+    }
+    if (sexes != NULL) {
+        PyMem_Free(sexes);
+    }
+    if (times != NULL) {
+        PyMem_Free(times);
+    }
+    if (populations != NULL) {
+        PyMem_Free(populations);
+    }
+    return ret;
+}
+
+static int
 Simulator_parse_migration_matrix(Simulator *self, PyObject *py_migration_matrix)
 {
     int ret = -1;

@@ -248,6 +248,34 @@ out:
 }
 
 int
+msp_set_pedigree(msp_t *self, size_t num_inds, uint32_t *inds, uint32_t *parents,
+        uint32_t *sexes, double *times,  uint32_t *populations)
+{
+    int ret = MSP_ERR_BAD_PEDIGREE;
+    size_t j;
+    size_t N = self->num_populations;
+
+    /* Check values */
+    for (j = 0; j < num_inds; j++) {
+        if (times[j] < 0 || populations[j] >= N) {
+            goto out;
+        }
+    }
+
+    // TODO: These need to be properly allocated and copied into
+    self->pedigree->num_inds = num_inds;
+    self->pedigree->inds = inds;
+    self->pedigree->parents = parents;
+    self->pedigree->sexes = sexes;
+    self->pedigree->times = times;
+    self->pedigree->populations = populations;
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
 msp_set_migration_matrix(msp_t *self, size_t size, double *migration_matrix)
 {
     int ret = MSP_ERR_BAD_MIGRATION_MATRIX;
