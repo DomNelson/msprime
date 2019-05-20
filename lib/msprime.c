@@ -248,12 +248,14 @@ out:
 }
 
 int
-msp_set_pedigree(msp_t *self, size_t num_inds, uint32_t *inds, uint32_t *parents,
-        uint32_t *sexes, double *times,  uint32_t *populations)
+msp_set_pedigree(msp_t *self, size_t num_inds, double *inds, double *parents,
+        double *sexes, double *times, double *populations)
 {
     int ret = MSP_ERR_BAD_PEDIGREE;
+    double* ped_block = NULL;
     size_t j;
     size_t N = self->num_populations;
+    int num_ped_cols = 5; // Hard-coded here for now...
 
     /* Check values */
     for (j = 0; j < num_inds; j++) {
@@ -261,15 +263,23 @@ msp_set_pedigree(msp_t *self, size_t num_inds, uint32_t *inds, uint32_t *parents
             goto out;
         }
     }
-
-    // TODO: These need to be properly allocated and copied into
     self->pedigree->num_inds = num_inds;
-    self->pedigree->inds = inds;
-    self->pedigree->parents = parents;
-    self->pedigree->sexes = sexes;
-    self->pedigree->times = times;
-    self->pedigree->populations = populations;
 
+    /* Allocate pedigree as a single block */
+    ped_block = calloc(num_ped_cols * num_inds, sizeof(double));
+    self->pedigree->inds = ped_block;
+    self->pedigree->parents = ped_block + num_inds;
+    self->pedigree->sexes = ped_block + (num_inds * 2);
+    self->pedigree->times = ped_block + (num_inds * 3);
+    self->pedigree->populations = ped_block + (num_inds * 4);
+
+    for (j = 0; j < num_inds; j++) {
+        self->pedigree->inds[j] = inds[j];
+        self->pedigree->parents[j] = parents[j];
+        self->pedigree->sexes[j] = sexes[j];
+        self->pedigree->times[j] = times[j];
+        self->pedigree->populations[j] = populations[j];
+    }
     ret = 0;
 out:
     return ret;

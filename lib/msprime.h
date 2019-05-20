@@ -321,6 +321,8 @@ int msp_set_migration_matrix(msp_t *self, size_t size,
         double *migration_matrix);
 int msp_set_population_configuration(msp_t *self, int population_id,
         double initial_size, double growth_rate);
+int msp_set_pedigree(msp_t *self, size_t num_inds, double *inds, double *parents,
+        double *sexes, double *times, double *populations);
 
 int msp_add_population_parameters_change(msp_t *self, double time,
         int population_id, double size, double growth_rate);

@@ -2408,11 +2408,11 @@ Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parent
             "All pedigree columns must be the same length.");
         goto out;
     }
-    inds = PyMem_Malloc(num_inds * sizeof(uint32_t));
-    parents = PyMem_Malloc(2 * num_inds * sizeof(uint32_t));
-    sexes = PyMem_Malloc(num_inds * sizeof(uint32_t));
+    inds = PyMem_Malloc(num_inds * sizeof(double));
+    parents = PyMem_Malloc(2 * num_inds * sizeof(double));
+    sexes = PyMem_Malloc(num_inds * sizeof(double));
     times = PyMem_Malloc(num_inds * sizeof(double));
-    populations = PyMem_Malloc(num_inds * sizeof(uint32_t));
+    populations = PyMem_Malloc(num_inds * sizeof(double));
     if (inds == NULL || parents == NULL || sexes == NULL ||
             times == NULL || populations == NULL) {
         PyErr_NoMemory();
@@ -3667,6 +3667,36 @@ Simulator_get_breakpoints(Simulator *self)
 out:
     if (breakpoints != NULL) {
         PyMem_Free(breakpoints);
+    }
+    return ret;
+}
+
+static PyObject *
+Simulator_get_pedigree(Simulator *self)
+{
+    PyObject *ret = NULL;
+    double *migration_matrix = NULL;
+    size_t N;
+    int err;
+
+    if (Simulator_check_sim(self) != 0) {
+        goto out;
+    }
+    N = msp_get_num_populations(self->sim);
+    migration_matrix = PyMem_Malloc(N * N * sizeof(double));
+    if (migration_matrix == NULL) {
+        PyErr_NoMemory();
+        goto out;
+    }
+    err = msp_get_migration_matrix(self->sim, migration_matrix);
+    if (err != 0) {
+        handle_library_error(err);
+        goto out;
+    }
+    ret = convert_float_list(migration_matrix, N * N);
+out:
+    if (migration_matrix != NULL) {
+        PyMem_Free(migration_matrix);
     }
     return ret;
 }
