@@ -248,14 +248,14 @@ out:
 }
 
 int
-msp_set_pedigree(msp_t *self, size_t num_inds, double *inds, double *parents,
-        double *sexes, double *times, double *populations)
+msp_set_pedigree(msp_t *self, size_t num_inds, size_t num_cols, double *inds,
+        double *fathers, double *mothers, double *sexes, double *times,
+        double *populations)
 {
     int ret = MSP_ERR_BAD_PEDIGREE;
     double* ped_block = NULL;
     size_t j;
     size_t N = self->num_populations;
-    int num_ped_cols = 5; // Hard-coded here for now...
 
     /* Check values */
     for (j = 0; j < num_inds; j++) {
@@ -263,19 +263,22 @@ msp_set_pedigree(msp_t *self, size_t num_inds, double *inds, double *parents,
             goto out;
         }
     }
+    self->pedigree->num_cols = num_cols;
     self->pedigree->num_inds = num_inds;
 
     /* Allocate pedigree as a single block */
-    ped_block = calloc(num_ped_cols * num_inds, sizeof(double));
+    ped_block = calloc(num_cols * num_inds, sizeof(double));
     self->pedigree->inds = ped_block;
-    self->pedigree->parents = ped_block + num_inds;
-    self->pedigree->sexes = ped_block + (num_inds * 2);
-    self->pedigree->times = ped_block + (num_inds * 3);
-    self->pedigree->populations = ped_block + (num_inds * 4);
+    self->pedigree->fathers = ped_block + num_inds;
+    self->pedigree->mothers = ped_block + (num_inds * 2);
+    self->pedigree->sexes = ped_block + (num_inds * 3);
+    self->pedigree->times = ped_block + (num_inds * 4);
+    self->pedigree->populations = ped_block + (num_inds * 5);
 
     for (j = 0; j < num_inds; j++) {
         self->pedigree->inds[j] = inds[j];
-        self->pedigree->parents[j] = parents[j];
+        self->pedigree->fathers[j] = fathers[j];
+        self->pedigree->mothers[j] = mothers[j];
         self->pedigree->sexes[j] = sexes[j];
         self->pedigree->times[j] = times[j];
         self->pedigree->populations[j] = populations[j];
@@ -3516,6 +3519,24 @@ msp_get_breakpoints(msp_t *self, size_t *breakpoints)
     }
     ret = 0;
     return ret;
+}
+
+int MSP_WARN_UNUSED
+msp_get_pedigree(msp_t *self, double *inds, double *fathers, double *mothers,
+        double *sexes, double *times, double *populations)
+{
+    size_t num_inds = self->pedigree->num_inds;
+    size_t j;
+
+    for (j = 0; j < num_inds; j++) {
+        inds[j] = self->pedigree->inds[j];
+        fathers[j] = self->pedigree->fathers[j];
+        mothers[j] = self->pedigree->mothers[j];
+        sexes[j] = self->pedigree->sexes[j];
+        times[j] = self->pedigree->times[j];
+        populations[j] = self->pedigree->populations[j];
+    }
+    return 0;
 }
 
 int MSP_WARN_UNUSED

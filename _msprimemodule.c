@@ -2388,19 +2388,22 @@ out:
 }
 
 static int
-Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parents,
-        PyObject *py_sexes, PyObject *py_times, PyObject *py_populations)
+Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_fathers,
+        PyObject *py_mothers, PyObject *py_sexes, PyObject *py_times,
+        PyObject *py_populations)
 {
     int ret = -1;
     int err;
     size_t num_populations, j, num_inds;
-    PyObject *inds_value, *parents_value, *sexes_value;
+    PyObject *inds_value, *fathers_value, *mothers_value, *sexes_value;
     PyObject *times_value, *populations_value;
-    double *inds, *parents, *sexes, *times, *populations = NULL;
+    double *inds, *fathers, *mothers, *sexes, *times, *populations = NULL;
+    size_t num_cols = 6; // TODO: Specify this more flexibly
 
     num_populations = msp_get_num_populations(self->sim);
     num_inds = PyList_Size(py_inds);
-    if (PyList_Size(py_parents) != num_inds ||
+    if (PyList_Size(py_fathers) != num_inds ||
+            PyList_Size(py_mothers) != num_inds ||
             PyList_Size(py_sexes) != num_inds ||
             PyList_Size(py_times) != num_inds ||
             PyList_Size(py_populations) != num_inds) {
@@ -2409,11 +2412,12 @@ Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parent
         goto out;
     }
     inds = PyMem_Malloc(num_inds * sizeof(double));
-    parents = PyMem_Malloc(2 * num_inds * sizeof(double));
+    fathers = PyMem_Malloc(num_inds * sizeof(double));
+    mothers = PyMem_Malloc(num_inds * sizeof(double));
     sexes = PyMem_Malloc(num_inds * sizeof(double));
     times = PyMem_Malloc(num_inds * sizeof(double));
     populations = PyMem_Malloc(num_inds * sizeof(double));
-    if (inds == NULL || parents == NULL || sexes == NULL ||
+    if (inds == NULL || fathers == NULL || mothers == NULL || sexes == NULL ||
             times == NULL || populations == NULL) {
         PyErr_NoMemory();
         goto out;
@@ -2424,7 +2428,8 @@ Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parent
 
     for (j = 0; j < num_inds; j++) {
         inds_value = PyList_GetItem(py_inds, j);
-        parents_value = PyList_GetItem(py_parents, j);
+        fathers_value = PyList_GetItem(py_fathers, j);
+        mothers_value = PyList_GetItem(py_mothers, j);
         sexes_value = PyList_GetItem(py_sexes, j);
         times_value = PyList_GetItem(py_times, j);
         populations_value = PyList_GetItem(py_populations, j);
@@ -2439,7 +2444,8 @@ Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parent
         }
 
         inds[j] = PyFloat_AsDouble(inds_value);
-        parents[j] = PyFloat_AsDouble(parents_value);
+        fathers[j] = PyFloat_AsDouble(fathers_value);
+        mothers[j] = PyFloat_AsDouble(mothers_value);
         sexes[j] = PyFloat_AsDouble(sexes_value);
         times[j] = PyFloat_AsDouble(times_value);
         populations[j] = PyFloat_AsDouble(populations_value);
@@ -2454,8 +2460,8 @@ Simulator_parse_pedigree(Simulator *self, PyObject *py_inds, PyObject *py_parent
             goto out;
         }
     }
-    err = msp_set_pedigree(self->sim, num_inds, inds, parents, sexes, times,
-            populations);
+    err = msp_set_pedigree(self->sim, num_inds, num_cols, inds, fathers, mothers,
+            sexes, times, populations);
     if (err != 0) {
         handle_input_error(err);
         goto out;
@@ -2465,8 +2471,11 @@ out:
     if (inds != NULL) {
         PyMem_Free(inds);
     }
-    if (parents != NULL) {
-        PyMem_Free(parents);
+    if (fathers != NULL) {
+        PyMem_Free(fathers);
+    }
+    if (mothers != NULL) {
+        PyMem_Free(mothers);
     }
     if (sexes != NULL) {
         PyMem_Free(sexes);
@@ -3675,28 +3684,58 @@ static PyObject *
 Simulator_get_pedigree(Simulator *self)
 {
     PyObject *ret = NULL;
-    double *migration_matrix = NULL;
+    double *inds = NULL;
+    double *fathers, *mothers = NULL;
+    double *sexes = NULL;
+    double *times = NULL;
+    double *populations = NULL;
     size_t N;
     int err;
+    size_t num_inds = self->sim->pedigree->num_inds;
 
     if (Simulator_check_sim(self) != 0) {
         goto out;
     }
-    N = msp_get_num_populations(self->sim);
-    migration_matrix = PyMem_Malloc(N * N * sizeof(double));
-    if (migration_matrix == NULL) {
+    inds = PyMem_Malloc(num_inds * sizeof(double));
+    fathers = PyMem_Malloc(num_inds * sizeof(double));
+    mothers = PyMem_Malloc(num_inds * sizeof(double));
+    sexes = PyMem_Malloc(num_inds * sizeof(double));
+    times = PyMem_Malloc(num_inds * sizeof(double));
+    populations = PyMem_Malloc(num_inds * sizeof(double));
+    if (inds == NULL || fathers == NULL || mothers == NULL || sexes == NULL ||
+            times == NULL || populations == NULL) {
         PyErr_NoMemory();
         goto out;
     }
-    err = msp_get_migration_matrix(self->sim, migration_matrix);
-    if (err != 0) {
-        handle_library_error(err);
-        goto out;
-    }
-    ret = convert_float_list(migration_matrix, N * N);
+
+    /* TODO: This won't work as-is, or at least I don't know how to return
+     * a list-of-lists to Python. For now refactor as separate getters for
+     * each column, and combine them in Python */
+
+    /* err = msp_get_migration_matrix(self->sim, migration_matrix); */
+    /* if (err != 0) { */
+    /*     handle_library_error(err); */
+    /*     goto out; */
+    /* } */
+    /* ret = convert_float_list(migration_matrix, N * N); */
 out:
-    if (migration_matrix != NULL) {
-        PyMem_Free(migration_matrix);
+    if (inds != NULL) {
+        PyMem_Free(inds);
+    }
+    if (fathers != NULL) {
+        PyMem_Free(fathers);
+    }
+    if (mothers != NULL) {
+        PyMem_Free(mothers);
+    }
+    if (sexes != NULL) {
+        PyMem_Free(sexes);
+    }
+    if (times != NULL) {
+        PyMem_Free(times);
+    }
+    if (populations != NULL) {
+        PyMem_Free(populations);
     }
     return ret;
 }

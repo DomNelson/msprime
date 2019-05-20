@@ -162,11 +162,13 @@ typedef struct {
 
 typedef struct {
     size_t num_inds;
-    uint32_t *inds;
-    uint32_t *parents;
-    uint32_t *sexes;
+    size_t num_cols;
+    double *inds;
+    double *fathers;
+    double *mothers;
+    double *sexes;
     double *times;
-    uint32_t *populations;
+    double *populations;
 } ped_t;
 
 typedef struct _msp_t {
@@ -321,8 +323,9 @@ int msp_set_migration_matrix(msp_t *self, size_t size,
         double *migration_matrix);
 int msp_set_population_configuration(msp_t *self, int population_id,
         double initial_size, double growth_rate);
-int msp_set_pedigree(msp_t *self, size_t num_inds, double *inds, double *parents,
-        double *sexes, double *times, double *populations);
+int msp_set_pedigree(msp_t *self, size_t num_inds, size_t num_cols, double *inds,
+        double *fathers, double *mothers, double *sexes, double *times,
+        double *populations);
 
 int msp_add_population_parameters_change(msp_t *self, double time,
         int population_id, double size, double growth_rate);
@@ -351,6 +354,8 @@ int msp_get_num_migration_events(msp_t *self, size_t *num_migration_events);
 int msp_get_samples(msp_t *self, sample_t **samples);
 int msp_get_population_configuration(msp_t *self, size_t population_id,
         double *initial_size, double *growth_rate);
+int msp_get_pedigree(msp_t *self, double *inds, double *fathers, double *mothers,
+        double *sexes, double *times, double *populations);
 int msp_compute_population_size(msp_t *self, size_t population_id,
         double time, double *pop_size);
 int msp_is_completed(msp_t *self);
