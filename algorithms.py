@@ -247,6 +247,127 @@ class Population(object):
         return self._ancestors[indv.label].index(indv)
 
 
+class Pedigree(object):
+    """
+    Class representing a pedigree for use with the DTWF model.
+    """
+    def __init__(self):
+        self.inds = []
+        self.num_inds = 0
+        self.samples = []
+
+    def load(self, pedfile):
+        self.pedfile = pedfile
+        alldata = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
+                                dtype=int)
+        self.ids = alldata[:, 0]
+        fathers = alldata[:, 1]
+        mothers = alldata[:, 2]
+        indices = range(len(alldata[:,0]))
+        self.ind_dict = dict(zip(alldata[:,0], indices))
+
+        self.ninds = len(self.ids)
+        self.inds = [Individual() for i in range(self.ninds)]
+
+        for i in range(self.ninds):
+            ind = self.inds[i]
+            ind.id = self.ids[i]
+            ind.idx = i
+
+            father = fathers[i]
+            mother = mothers[i]
+
+            if father != 0:
+                father_ix = self.ind_dict[father]
+                ind.father = self.inds[father_ix]
+                ind.father.children.append(ind)
+            if mother != 0:
+                mother_ix = self.ind_dict[mother]
+                ind.mother = self.inds[mother_ix]
+                ind.mother.children.append(ind)
+
+    def get_path(self):
+        """
+        Returns a list of individuals whose segments can be merged at each
+        timepoint.
+        """
+        pass
+
+    def set_samples(self):
+        """
+        For now this returns individuals without children in the pedigree.
+        """
+        if len(self.samples) > 0:
+            print("Samples already loaded.")
+            return
+
+        for ind in self.inds:
+            if len(ind.children) == 0:
+                self.samples.append(ind)
+
+    def assign_times(self):
+        """
+        For pedigrees without specified times, crudely assigns times to
+        all individuals.
+        """
+        if len(self.samples) == 0:
+            self.set_samples()
+        assert len(self.samples) > 0
+
+        climbers = [s for s in self.samples]
+        t = 0
+        while len(climbers) > 0:
+            next_climbers = []
+            for climber in climbers:
+                if climber.time < t:
+                    climber.time = t
+                if climber.mother is not None:
+                    next_climbers.append(climber.mother)
+                if climber.father is not None:
+                    next_climbers.append(climber.father)
+            climbers = next_climbers
+            t += 1
+
+        for ind in self.inds:
+            if ind.mother is not None:
+                assert ind.time < ind.mother.time
+            if ind.father is not None:
+                assert ind.time < ind.father.time
+
+
+class Individual(object):
+    """
+    Class representing a diploid individual in the DTWF model.
+    """
+    def __init__(self):
+        self.id = None
+        self.mother = None
+        self.father = None
+        self.children = []
+        self.segments = []
+        self.sex = None
+        self.time = -1
+
+    def __str__(self):
+        id = self.id
+        mother = None
+        father = None
+        if self.mother is not None:
+            mother = self.mother.id
+        if self.father is not None:
+            father = self.father.id
+
+        return "(ID: {}, mother: {}, father: {})".format(
+                id, mother, father)
+
+    def __repr__(self):
+        return self.__str__()
+
+    def set_segments(self, segments):
+        assert len(segments) == 2 # <- could eventually be arbitrary ploidy
+        self.segments = segments
+
+
 class TrajectorySimulator(object):
     """
     Class to simulate an allele frequency trajectory on which to condition
