@@ -258,13 +258,13 @@ class Pedigree(object):
 
     def load(self, pedfile):
         self.pedfile = pedfile
-        alldata = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
+        ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
                                 dtype=int)
-        self.ids = alldata[:, 0]
-        fathers = alldata[:, 1]
-        mothers = alldata[:, 2]
-        indices = range(len(alldata[:,0]))
-        self.ind_dict = dict(zip(alldata[:,0], indices))
+        self.ids = ped_data[:, 0]
+        fathers = ped_data[:, 1]
+        mothers = ped_data[:, 2]
+        indices = range(ped_data.shape()[0])
+        self.ind_dict = dict(zip(ped_data[:,0], indices))
 
         self.ninds = len(self.ids)
         self.inds = [Individual() for i in range(self.ninds)]
@@ -286,16 +286,11 @@ class Pedigree(object):
                 ind.mother = self.inds[mother_ix]
                 ind.mother.children.append(ind)
 
-    def get_path(self):
+    def set_samples(self, pop, ploidy=2):
         """
-        Returns a list of individuals whose segments can be merged at each
-        timepoint.
-        """
-        pass
-
-    def set_samples(self):
-        """
-        For now this returns individuals without children in the pedigree.
+        For now this loads segments from the given pop into pedigree
+        individuals without children - eventually extend to specify specific
+        individuals to simulate.
         """
         if len(self.samples) > 0:
             print("Samples already loaded.")
@@ -305,7 +300,16 @@ class Pedigree(object):
             if len(ind.children) == 0:
                 self.samples.append(ind)
 
-    def assign_times(self):
+        if len(self.samples) * ploidy != pop.get_num_ancestors():
+            print("Incorrect number of samples for pedigree!")
+            raise ValueError
+
+        for i in range(pop.get_num_ancestors()-1, -1, -1):
+            anc = pop.remove(i)
+            ind = self.inds[i % ploidy]
+            ind.add_segment(anc)
+
+    def assign_times(self, check=False):
         """
         For pedigrees without specified times, crudely assigns times to
         all individuals.
@@ -328,11 +332,12 @@ class Pedigree(object):
             climbers = next_climbers
             t += 1
 
-        for ind in self.inds:
-            if ind.mother is not None:
-                assert ind.time < ind.mother.time
-            if ind.father is not None:
-                assert ind.time < ind.father.time
+        if check:
+            for ind in self.inds:
+                if ind.mother is not None:
+                    assert ind.time < ind.mother.time
+                if ind.father is not None:
+                    assert ind.time < ind.father.time
 
 
 class Individual(object):
@@ -363,9 +368,8 @@ class Individual(object):
     def __repr__(self):
         return self.__str__()
 
-    def set_segments(self, segments):
-        assert len(segments) == 2 # <- could eventually be arbitrary ploidy
-        self.segments = segments
+    def add_segment(self, segment):
+        self.segments.append(segment)
 
 
 class TrajectorySimulator(object):
