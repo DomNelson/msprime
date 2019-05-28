@@ -255,6 +255,7 @@ class Pedigree(object):
         self.inds = []
         self.num_inds = 0
         self.samples = []
+        self.extant_heap = []
 
     def load(self, pedfile):
         self.pedfile = pedfile
@@ -263,7 +264,7 @@ class Pedigree(object):
         self.ids = ped_data[:, 0]
         fathers = ped_data[:, 1]
         mothers = ped_data[:, 2]
-        indices = range(ped_data.shape()[0])
+        indices = range(ped_data.shape[0])
         self.ind_dict = dict(zip(ped_data[:,0], indices))
 
         self.ninds = len(self.ids)
@@ -338,6 +339,17 @@ class Pedigree(object):
                     assert ind.time < ind.mother.time
                 if ind.father is not None:
                     assert ind.time < ind.father.time
+
+    def build_queue(self):
+        """
+        Set up heap queue of samples, so most recent can be popped for merge.
+        Heapify in case samples are not all at t=0.
+
+        NOTE: This simulation algorithm will require a new implementation of
+        dtwf_generation()
+        """
+        self.extant_heap = [(ind.time, ind) for ind in self.samples]
+        heapq.heapify(self.extant_heap)
 
 
 class Individual(object):
