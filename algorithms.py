@@ -2,6 +2,7 @@
 Python version of the simulation algorithm.
 """
 import sys
+import os
 import random
 import argparse
 import heapq
@@ -251,13 +252,18 @@ class Pedigree(object):
     """
     Class representing a pedigree for use with the DTWF model.
     """
-    def __init__(self):
+    def __init__(self, pedfile=None, ploidy=2):
         self.inds = []
         self.num_inds = 0
         self.samples = []
         self.extant_heap = []
 
-    def load(self, pedfile):
+        if pedfile is not None:
+            self.load(pedfile, ploidy)
+            self.set_samples()
+
+    def load(self, pedfile, ploidy=2):
+        self.ploidy = ploidy
         self.pedfile = pedfile
         ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
                                 dtype=int)
@@ -287,7 +293,7 @@ class Pedigree(object):
                 ind.mother = self.inds[mother_ix]
                 ind.mother.children.append(ind)
 
-    def set_samples(self, pop, ploidy=2):
+    def set_samples(self):
         """
         For now this loads segments from the given pop into pedigree
         individuals without children - eventually extend to specify specific
@@ -300,15 +306,6 @@ class Pedigree(object):
         for ind in self.inds:
             if len(ind.children) == 0:
                 self.samples.append(ind)
-
-        if len(self.samples) * ploidy != pop.get_num_ancestors():
-            print("Incorrect number of samples for pedigree!")
-            raise ValueError
-
-        for i in range(pop.get_num_ancestors()-1, -1, -1):
-            anc = pop.remove(i)
-            ind = self.inds[i % ploidy]
-            ind.add_segment(anc)
 
     def assign_times(self, check=False):
         """
@@ -444,7 +441,7 @@ class Simulator(object):
             population_growth_rate_changes, population_size_changes,
             migration_matrix_element_changes, bottlenecks, model='hudson',
             from_ts=None, max_segments=100, num_labels=1, sweep_trajectory=None,
-            full_arg=False, time_slice=None):
+            full_arg=False, time_slice=None, pedigree=None):
         # Must be a square matrix.
         N = len(migration_matrix)
         assert len(sample_configuration) == N
@@ -478,7 +475,33 @@ class Simulator(object):
             self.P[pop_index].set_growth_rate(population_growth_rates[pop_index], 0)
         self.edge_buffer = []
         self.from_ts = from_ts
-        if from_ts is None:
+
+        if pedigree is not None:
+            assert from_ts is None
+            assert N == 1 # <- only support single pop/pedigree for now
+            sample_size = sample_configuration[0]
+            if len(pedigree.samples) != sample_size:
+                print("Ped samples:", len(pedigree.samples), "Samples:",
+                        sample_configuration[0], "- must be equal!")
+                raise ValueError
+            self.tables = msprime.TableCollection(sequence_length=num_loci)
+            pop = self.P[0]
+            for k in range(sample_size):
+                ind = pedigree.inds[k % pedigree.ploidy]
+                for i in range(pedigree.ploidy):
+                    j = len(self.tables.nodes)
+                    x = self.alloc_segment(0, self.m, j, 0)
+                    self.L[0].set_value(x.index, self.m - 1)
+                    ind.add_segment(x)
+                    self.tables.nodes.add_row(
+                        flags=msprime.NODE_IS_SAMPLE, time=0, population=0)
+                pop.add(ind)
+            self.S[0] = self.n
+            self.S[self.m] = -1
+            self.t = 0
+            print("Pedigree loaded!")
+            sys.exit()
+        elif from_ts is None:
             self.tables = msprime.TableCollection(sequence_length=num_loci)
             for pop_index in range(N):
                 self.tables.populations.add_row()
@@ -1442,6 +1465,11 @@ def run_simulate(args):
         traj_sim = TrajectorySimulator(init_freq, end_freq, alpha, args.time_slice)
         sweep_trajectory = traj_sim.run()
         num_labels = 2
+    pedigree = None
+    if args.pedigree_file is not None:
+        print("Loading pedigree")
+        pedfile = os.path.expanduser(args.pedigree_file)
+        pedigree = Pedigree(pedfile=pedfile)
     random.seed(args.random_seed)
     s = Simulator(
         n, m, rho, migration_matrix,
@@ -1451,7 +1479,8 @@ def run_simulate(args):
         args.migration_matrix_element_change,
         args.bottleneck, args.model, from_ts=args.from_ts,
         max_segments=10000, num_labels=num_labels, full_arg=args.full_arg,
-        sweep_trajectory=sweep_trajectory, time_slice=args.time_slice)
+        sweep_trajectory=sweep_trajectory, time_slice=args.time_slice,
+        pedigree=pedigree)
     ts = s.simulate()
     ts.dump(args.output_file)
     if args.verbose:
@@ -1502,6 +1531,7 @@ def add_simulator_arguments(parser):
         "--time-slice", type=float, default=1e-6,
         help="The delta_t value for selective sweeps")
     parser.add_argument("--model", default='hudson')
+    parser.add_argument("--pedigree-file", default=None)
     parser.add_argument(
         "--from-ts", "-F", default=None,
         help=(
