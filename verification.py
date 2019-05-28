@@ -1192,7 +1192,7 @@ class SimulationVerifier(object):
             num_replicates = 200
 
         if growth_rates is None:
-            default_growth_rate = 0.01
+            default_growth_rate = 0.005
             growth_rates = [default_growth_rate] * num_pops
 
         population_configurations = []
@@ -1216,12 +1216,23 @@ class SimulationVerifier(object):
                 row[i] = 0
                 migration_matrix.append(row)
 
+        ## Avoids zero population size errors
+        demographic_events = [
+                msprime.PopulationParametersChange(1000, growth_rate=0)]
+
+        # Collect all pops together to avoid long-running simulations
+        for i in range(1, len(population_configurations)):
+            demographic_events.append(
+                msprime.MassMigration(
+                    time=1000, source=i, destination=0, proportion=1.0))
+
         def f():
             self.run_dtwf_coalescent_comparison(
                     key,
                     population_configurations=population_configurations,
                     migration_matrix=migration_matrix,
                     num_replicates=num_replicates,
+                    demographic_events=demographic_events,
                     recombination_map=recombination_map
                     )
         self._instances[key] = f
@@ -1322,7 +1333,7 @@ class SimulationVerifier(object):
             self, key, num_populations=1, num_replicates=200, num_demographic_events=0):
 
         N = num_populations
-        num_loci = np.random.randint(1e5, 1e7)
+        num_loci = np.random.randint(1e5, 1e6)
         rho = 1e-8
         recombination_map = msprime.RecombinationMap(
                 [0, num_loci], [rho, 0], num_loci=num_loci)
@@ -1339,12 +1350,12 @@ class SimulationVerifier(object):
                 [random.uniform(0.1, 0.5) * (j != i) for j in range(N)])
 
         # Add demographic events and some migration rate changes
-        t_max = 2000
+        t_max = 1000
         demographic_events = []
         times = sorted(np.random.randint(500, t_max, size=num_demographic_events))
         for t in times:
             initial_size = np.random.randint(500, 1000)
-            growth_rate = np.random.uniform(-0.005, 0.01)
+            growth_rate = np.random.uniform(-0.005, 0.005)
             pop_id = np.random.randint(N)
             demographic_events.append(
                 msprime.PopulationParametersChange(
@@ -1366,7 +1377,7 @@ class SimulationVerifier(object):
 
         demographic_events.append(
             msprime.PopulationParametersChange(
-                time=t_max, initial_size=1000, growth_rate=0.01, population_id=0))
+                time=t_max, initial_size=100, growth_rate=0, population_id=0))
 
         def f():
             self.run_dtwf_coalescent_comparison(
@@ -2070,18 +2081,18 @@ def main():
         'dtwf_vs_coalescent_3_pops_asymm_mig_3', [500, 500, 500], [10, 10, 0],
         int(1e7), 1e-8, migration_matrix=migration_matrix, num_replicates=500)
 
-    migration_matrix = [[0, 0.5], [0.7, 0]]
+    migration_matrix = [[0, 0.5], [0.3, 0]]
     verifier.add_dtwf_vs_coalescent(
         'dtwf_vs_coalescent_2_pops_high_asymm_mig_1', [5000, 5000], [10, 10],
         int(1e7), 1e-8, migration_matrix=migration_matrix, num_replicates=200,
         growth_rates=[0.005, 0.005])
-    migration_matrix = [[0, 0.3], [0.8, 0]]
+    migration_matrix = [[0, 0.3], [0.5, 0]]
     verifier.add_dtwf_vs_coalescent(
         'dtwf_vs_coalescent_2_pops_high_asymm_mig_2', [2000, 2000], [10, 10],
         int(1e8), 1e-8, migration_matrix=migration_matrix, num_replicates=200,
         growth_rates=[0.005, 0.005])
 
-    migration_matrix = [[0, 0.5, 0.6], [0.7, 0, 0.2], [0.4, 0.8, 0]]
+    migration_matrix = [[0, 0.5, 0.4], [0.2, 0, 0.2], [0.3, 0.5, 0]]
     verifier.add_dtwf_vs_coalescent(
         'dtwf_vs_coalescent_3_pops_high_asymm_mig_1', [1000, 5000, 5000], [20, 10, 10],
         int(1e7), 1e-8, migration_matrix=migration_matrix, num_replicates=200,
@@ -2135,11 +2146,11 @@ def main():
     verifier.add_dtwf_vs_slim(
         'dtwf_vs_slim_2_pops_5', [10, 10], [1, 1], 5e8, 1e-8, num_replicates=500)
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_2_pops_6', [2, 2], [2, 2], 5e8, 1e-8, num_replicates=1000)
+        'dtwf_vs_slim_2_pops_6', [20, 20], [2, 2], 5e8, 1e-8, num_replicates=300)
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_2_pops_7', [2, 2], [2, 2], 1e8, 1e-8, num_replicates=500)
+        'dtwf_vs_slim_2_pops_7', [20, 20], [2, 2], 1e8, 1e-8, num_replicates=500)
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_2_pops_8', [2, 2], [2, 2], 1e7, 1e-8, num_replicates=5000)
+        'dtwf_vs_slim_2_pops_8', [20, 20], [2, 2], 1e7, 1e-8, num_replicates=500)
     verifier.add_dtwf_vs_slim(
         'dtwf_vs_slim_2_pops_10', [100, 100], [1, 1], 1e6, 1e-8, num_replicates=500)
 
@@ -2156,19 +2167,19 @@ def main():
         'dtwf_vs_slim_3_pops_4', [50, 50, 50], [5, 5, 5], 5e7, 1e-8, num_replicates=200)
 
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_4_pops_single_locus', [10, 10, 10, 10], [5, 5, 5, 5], 1, 0,
+        'dtwf_vs_slim_4_pops_single_locus', [20, 20, 20, 20], [5, 5, 5, 5], 1, 0,
         num_replicates=500)
     verifier.add_dtwf_vs_slim(
         'dtwf_vs_slim_4_pops_single_locus_2', [10, 10, 10, 10], [1, 1, 1, 1], 1, 0,
         num_replicates=500)
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_4_pops_single_locus_3', [10, 10, 10, 10], [10, 10, 10, 10], 1, 0,
-        num_replicates=100)
+        'dtwf_vs_slim_4_pops_single_locus_3', [50, 50, 50, 50], [10, 10, 10, 10], 1, 0,
+        num_replicates=300)
     verifier.add_dtwf_vs_slim(
         'dtwf_vs_slim_4_pops_1', [10, 10, 10, 10], [5, 5, 5, 5], 5e2, 1e-3,
         num_replicates=500)
     verifier.add_dtwf_vs_slim(
-        'dtwf_vs_slim_4_pops_2', [2, 2, 2, 2], [2, 2, 2, 2], 5e8, 1e-8,
+        'dtwf_vs_slim_4_pops_2', [20, 20, 20, 20], [2, 2, 2, 2], 5e8, 1e-8,
         num_replicates=200)
 
     migration_matrix = [[0, 0.9], [0.9, 0]]
