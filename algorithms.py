@@ -255,7 +255,7 @@ class Pedigree(object):
         self.inds = []
         self.num_inds = 0
         self.samples = []
-        self.extant_heap = []
+        self.ind_heap = []
 
     def load(self, pedfile):
         self.pedfile = pedfile
@@ -340,7 +340,7 @@ class Pedigree(object):
                 if ind.father is not None:
                     assert ind.time < ind.father.time
 
-    def build_queue(self):
+    def build_ind_queue(self):
         """
         Set up heap queue of samples, so most recent can be popped for merge.
         Heapify in case samples are not all at t=0.
@@ -348,25 +348,41 @@ class Pedigree(object):
         NOTE: This simulation algorithm will require a new implementation of
         dtwf_generation()
         """
-        self.extant_heap = [(ind.time, ind) for ind in self.samples]
-        heapq.heapify(self.extant_heap)
+        self.ind_heap = [(ind.time, ind) for ind in self.samples]
+        heapq.heapify(self.ind_heap)
+
+    def push_ind(self, ind):
+        """
+        Adds an individual to the heap queue
+        """
+        heapq.heappush(self.ind_heap, (ind.time, ind))
+
+    def pop_ind(self):
+        """
+        Pops the most recent individual off the heap queue
+        """
+        return heapq.heappop(self.ind_heap)
 
 
 class Individual(object):
     """
-    Class representing a diploid individual in the DTWF model.
+    Class representing a diploid individual in the DTWF model. Trying to make
+    arbitrary ploidy possible at some point in the future.
     """
-    def __init__(self):
+    def __init__(self, ploidy=2):
         self.id = None
         self.mother = None
         self.father = None
         self.children = []
-        self.segments = []
+        self.segments = [[] for i in range(ploidy)]
         self.sex = None
         self.time = -1
 
+        ## For debugging
+        self.merged = False
+
     def __str__(self):
-        id = self.id
+        ID = self.id
         mother = None
         father = None
         if self.mother is not None:
@@ -375,13 +391,25 @@ class Individual(object):
             father = self.father.id
 
         return "(ID: {}, mother: {}, father: {})".format(
-                id, mother, father)
+                ID, mother, father)
 
     def __repr__(self):
         return self.__str__()
 
-    def add_segment(self, segment):
-        self.segments.append(segment)
+    def add_segment(self, seg, parent):
+        """
+        Adds a segment to a parental segment heap, which allows easy merging
+        later.
+        """
+        if parent.lower()[0] == "m":
+            ix = 0
+        else if parent.lower()[0] == "f":
+            ix = 1
+        else:
+            print("Invalid parent specified!")
+            raise ValueError
+
+        heapq.heappush(self.segments[ix], (seg.left, seg)
 
 
 class TrajectorySimulator(object):
@@ -827,11 +855,14 @@ class Simulator(object):
         """
         Simulates the algorithm until all loci have coalesced.
         """
-        while self.ancestors_remain():
-            self.t += 1
-            self.verify()
+        if self.pedigree is not None:
+            dtwf_climb_pedigree()
+        else:
+            while self.ancestors_remain():
+                self.t += 1
+                self.verify()
 
-            self.dtwf_generation()
+                self.dtwf_generation()
 
     def dtwf_generation(self):
         """
@@ -881,6 +912,25 @@ class Simulator(object):
                     mig_source = j
                     mig_dest = k
                     self.migration_event(mig_source, mig_dest)
+
+    def dtwf_climb_pedigree(self):
+        """
+        Simulates transmission of ancestral material through a pre-specified
+        pedigree
+        """
+        assert len(self.pedigree.ind_heap) > 0
+
+        while len(self.pedigree.ind_heap) > 0:
+            next_ind = self.pedigree.pop_ind()
+            assert len(next_ind.segments) == 2
+            ## NOTE: Inds have a fixed maternal/paternal segment
+            maternal_segment = next_ind.segments[0]
+            paternal_segment = next_ind.segments[1]
+
+            ## First merge segments inherited from this ind
+            ## TODO: Need to keep pointer to the merged segment to climb to
+            ## to the next parent
+
 
     def store_arg_edges(self, segment):
         u = len(self.tables.nodes) - 1
