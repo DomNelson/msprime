@@ -257,6 +257,9 @@ class Pedigree(object):
         self.samples = []
         self.ind_heap = []
 
+        ## Stores most recently merged segment
+        self.merged_segment = None
+
     def load(self, pedfile):
         self.pedfile = pedfile
         ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
@@ -377,6 +380,7 @@ class Individual(object):
         self.segments = [[] for i in range(ploidy)]
         self.sex = None
         self.time = -1
+        self.queued = False
 
         ## For debugging
         self.merged = False
@@ -919,17 +923,39 @@ class Simulator(object):
         pedigree
         """
         assert len(self.pedigree.ind_heap) > 0
+        assert self.num_populations == 1 ## <- single pop/pedigree for now
 
         while len(self.pedigree.ind_heap) > 0:
             next_ind = self.pedigree.pop_ind()
             assert len(next_ind.segments) == 2
-            ## NOTE: Inds have a fixed maternal/paternal segment
-            maternal_segment = next_ind.segments[0]
-            paternal_segment = next_ind.segments[1]
 
-            ## First merge segments inherited from this ind
-            ## TODO: Need to keep pointer to the merged segment to climb to
-            ## to the next parent
+            ## NOTE: Inds have a fixed index for maternal/paternal segments
+            maternal_segments = next_ind.segments[0]
+            paternal_segments = next_ind.segments[1]
+            segments_list = [maternal_segments, paternal_segments]
+            parents = [next_ind.mother, next_ind.father]
+
+            for segments, parent in zip(segments_lists, parents):
+                ## Merge segments inherited from this ind and recombine
+                self.merge_ancestors(segments, 0, 0)
+                merged_segment = self.pedigree.merged_segment
+                self.pedigree.merged_segment = None
+
+                segs_pair = self.dtwf_recombine(merged_segment)
+
+                ## Climb segments to parents
+                for p, seg in zip(['m', 'f'], segs_pair):
+                    if seg is None:
+                        continue
+                    assert seg.prev is None
+                    parent.add_segment(seg, parent=p)
+
+                if not parent.queued:
+                    self.pedigree.push_ind(parent)
+                    parent.queued = True
+
+        print("Pedigree climbing complete!")
+        sys.exit()
 
 
     def store_arg_edges(self, segment):
@@ -1213,6 +1239,9 @@ class Simulator(object):
                     pop.add(alpha, label)
                     self.L[alpha.label].set_value(
                         alpha.index, alpha.right - alpha.left - 1)
+                    if self.pedigree is not None:
+                        assert self.pedigree.merged_segment is None
+                        self.pedigree.merged_segment = alpha
                 else:
                     if self.full_arg:
                         defrag_required |= z.right == alpha.left
