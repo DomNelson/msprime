@@ -257,6 +257,7 @@ class Pedigree(object):
         self.num_inds = 0
         self.samples = []
         self.ind_heap = []
+        self.ploidy = 0
 
         ## Stores most recently merged segment
         self.merged_segment = None
@@ -264,8 +265,9 @@ class Pedigree(object):
         if pedfile is not None:
             self.load(pedfile)
 
-    def load(self, pedfile):
+    def load(self, pedfile, ploidy=2):
         self.pedfile = pedfile
+        self.ploidy = ploidy
         ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
                                 dtype=int)
         self.ids = ped_data[:, 0]
@@ -275,7 +277,7 @@ class Pedigree(object):
         self.ind_dict = dict(zip(ped_data[:,0], indices))
 
         self.ninds = len(self.ids)
-        self.inds = [Individual() for i in range(self.ninds)]
+        self.inds = [Individual(ploidy=ploidy) for i in range(self.ninds)]
 
         for i in range(self.ninds):
             ind = self.inds[i]
@@ -294,28 +296,36 @@ class Pedigree(object):
                 ind.mother = self.inds[mother_ix]
                 ind.mother.children.append(ind)
 
-    def set_samples(self, pop, ploidy=2):
+    def set_samples(self, pop):
         """
         For now this loads segments from the given pop into pedigree
         individuals without children - eventually extend to specify specific
         individuals to simulate.
         """
         if len(self.samples) > 0:
-            print("Samples already loaded.")
-            return
+            raise ValueError("Samples already loaded.")
 
         for ind in self.inds:
             if len(ind.children) == 0:
                 self.samples.append(ind)
 
-        if len(self.samples) * ploidy != pop.get_num_ancestors():
-            print("Incorrect number of samples for pedigree!")
-            raise ValueError
+        if self.num_sample_lineages() != pop.get_num_ancestors():
+            err_str = "Ped samples: " + str(self.num_sample_lineages()) + \
+                    " Samples: " + str(pop.get_num_ancestors()) + \
+                    " - must be equal!"
+            raise ValueError(err_str)
 
-        for i in range(pop.get_num_ancestors()-1, -1, -1):
-            anc = pop.remove(i)
-            ind = self.inds[i % ploidy]
-            ind.add_segment(anc)
+        for i, anc in enumerate(pop):
+            # Each individual gets 'ploidy' lineages
+            ind = self.samples[i // self.ploidy]
+            parent_ix = i % self.ploidy
+            ind.add_segment(anc, parent_ix=parent_ix)
+
+        # Add samples to queue to prepare for climbing - might be better if
+        # included in previous loop
+        for ind in self.samples:
+            self.push_ind(ind)
+
 
     def assign_times(self, check=False):
         """
@@ -362,13 +372,20 @@ class Pedigree(object):
         """
         Adds an individual to the heap queue
         """
-        heapq.heappush(self.ind_heap, (ind.time, ind))
+        heapq.heappush(self.ind_heap, ind)
 
     def pop_ind(self):
         """
         Pops the most recent individual off the heap queue
         """
         return heapq.heappop(self.ind_heap)
+
+    def num_sample_lineages(self):
+        return len(self.samples) * self.ploidy
+
+    def print_samples(self):
+        for s in self.samples:
+            print(s)
 
 
 class Individual(object):
@@ -390,7 +407,6 @@ class Individual(object):
         self.merged = False
 
     def __str__(self):
-        ID = self.id
         mother = None
         father = None
         if self.mother is not None:
@@ -398,26 +414,28 @@ class Individual(object):
         if self.father is not None:
             father = self.father.id
 
-        return "(ID: {}, mother: {}, father: {})".format(
-                ID, mother, father)
+        return "(ID: {}, mother: {}, father: {}, time: {})".format(
+                self.id, mother, father, self.time)
 
     def __repr__(self):
         return self.__str__()
 
-    def add_segment(self, seg, parent):
+    def __lt__(self, other):
+        return self.time < other.time
+
+    def add_segment(self, seg, parent_ix):
         """
         Adds a segment to a parental segment heap, which allows easy merging
         later.
         """
-        if parent.lower()[0] == "m":
-            ix = 0
-        elif parent.lower()[0] == "f":
-            ix = 1
-        else:
-            print("Invalid parent specified!")
-            raise ValueError
+        if parent_ix > len(self.segments) - 1:
+            raise ValueError("Invalid parent index: " + str(parent_ix) +\
+                    " for parent list of length " + str(len(self.segments)))
 
-        heapq.heappush(self.segments[ix], (seg.left, seg))
+        heapq.heappush(self.segments[parent_ix], (seg.left, seg))
+
+    def num_lineages(self):
+        return sum([len(s) for s in self.segments])
 
 
 class TrajectorySimulator(object):
@@ -514,33 +532,9 @@ class Simulator(object):
             self.P[pop_index].set_growth_rate(population_growth_rates[pop_index], 0)
         self.edge_buffer = []
         self.from_ts = from_ts
+        self.pedigree = pedigree
 
-        if pedigree is not None:
-            assert from_ts is None
-            assert N == 1 # <- only support single pop/pedigree for now
-            sample_size = sample_configuration[0]
-            if len(pedigree.samples) != sample_size:
-                raise ValueError("Ped samples: " + \
-                        str(len(pedigree.samples)) +  " Samples: " + \
-                        str(sample_configuration[0]) + " - must be equal!")
-            self.tables = msprime.TableCollection(sequence_length=num_loci)
-            pop = self.P[0]
-            for k in range(sample_size):
-                ind = pedigree.inds[k % pedigree.ploidy]
-                for i in range(pedigree.ploidy):
-                    j = len(self.tables.nodes)
-                    x = self.alloc_segment(0, self.m, j, 0)
-                    self.L[0].set_value(x.index, self.m - 1)
-                    ind.add_segment(x)
-                    self.tables.nodes.add_row(
-                        flags=msprime.NODE_IS_SAMPLE, time=0, population=0)
-                pop.add(ind)
-            self.S[0] = self.n
-            self.S[self.m] = -1
-            self.t = 0
-            print("Pedigree loaded!")
-            sys.exit()
-        elif from_ts is None:
+        if from_ts is None:
             self.tables = msprime.TableCollection(sequence_length=num_loci)
             for pop_index in range(N):
                 self.tables.populations.add_row()
@@ -563,6 +557,13 @@ class Simulator(object):
             if ts.num_populations != N:
                 raise ValueError("Number of populations in from_ts must match")
             self.initialise_from_ts(ts)
+
+        if pedigree is not None:
+            assert N == 1 # <- only support single pop/pedigree for now
+            pop = self.P[0]
+            sample_size = sample_configuration[0]
+            pedigree.set_samples(pop)
+            pedigree.assign_times(check=True)
 
         self.num_ca_events = 0
         self.num_re_events = 0
@@ -722,7 +723,10 @@ class Simulator(object):
         if self.model == 'hudson':
             self.hudson_simulate()
         elif self.model == 'dtwf':
-            self.dtwf_simulate()
+            if self.pedigree is not None:
+                self.dtwf_climb_pedigree()
+            else:
+                self.dtwf_simulate()
         elif self.model == 'single_sweep':
             # self.print_state()
             self.single_sweep_simulate()
@@ -957,7 +961,8 @@ class Simulator(object):
 
         while len(self.pedigree.ind_heap) > 0:
             next_ind = self.pedigree.pop_ind()
-            assert len(next_ind.segments) == 2
+            self.t = next_ind.time
+            assert next_ind.num_lineages() > 0
 
             ## NOTE: Inds have a fixed index for maternal/paternal segments
             maternal_segments = next_ind.segments[0]
@@ -965,27 +970,34 @@ class Simulator(object):
             segments_list = [maternal_segments, paternal_segments]
             parents = [next_ind.mother, next_ind.father]
 
-            for segments, parent in zip(segments_lists, parents):
+            for segments, parent in zip(segments_list, parents):
+                # If parent is None, we are at a pedigree founder and we stop
+                # climbing
+                if parent is None:
+                    continue
+
+                # This parent may not have contributed any ancestral material
+                # to the samples.
+                if len(segments) == 0:
+                    continue
+
                 ## Merge segments inherited from this ind and recombine
                 self.merge_ancestors(segments, 0, 0)
+
                 merged_segment = self.pedigree.merged_segment
+                segs_pair = self.dtwf_recombine(merged_segment)
                 self.pedigree.merged_segment = None
 
-                segs_pair = self.dtwf_recombine(merged_segment)
-
                 ## Climb segments to parents
-                for p, seg in zip(['m', 'f'], segs_pair):
+                for i, seg in enumerate(segs_pair):
                     if seg is None:
                         continue
                     assert seg.prev is None
-                    parent.add_segment(seg, parent=p)
+                    parent.add_segment(seg, parent_ix=i)
 
                 if not parent.queued:
                     self.pedigree.push_ind(parent)
                     parent.queued = True
-
-        print("Pedigree climbing complete!")
-        sys.exit()
 
 
     def store_arg_edges(self, segment):
@@ -1553,7 +1565,6 @@ def run_simulate(args):
         num_labels = 2
     pedigree = None
     if args.pedigree_file is not None:
-        print("Loading pedigree")
         pedfile = os.path.expanduser(args.pedigree_file)
         pedigree = Pedigree(pedfile=pedfile)
     random.seed(args.random_seed)
