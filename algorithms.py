@@ -252,49 +252,41 @@ class Pedigree(object):
     """
     Class representing a pedigree for use with the DTWF model.
     """
-    def __init__(self, pedfile):
+    def __init__(self, pedfile, ploidy=2):
         self.inds = []
         self.num_inds = 0
         self.samples = []
         self.ind_heap = []
-        self.ploidy = 0
+        self.ploidy = ploidy
 
         ## Stores most recently merged segment
         self.merged_segment = None
 
         if pedfile is not None:
-            self.load(pedfile)
+            self.load(pedfile, ploidy)
 
-    def load(self, pedfile, ploidy=2):
+    def load(self, pedfile, ploidy):
         self.pedfile = pedfile
         self.ploidy = ploidy
         ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
                                 dtype=int)
         self.ids = ped_data[:, 0]
-        fathers = ped_data[:, 1]
-        mothers = ped_data[:, 2]
-        indices = range(ped_data.shape[0])
-        self.ind_dict = dict(zip(ped_data[:,0], indices))
+        parents = ped_data[:, 1:1+ploidy]
 
         self.ninds = len(self.ids)
         self.inds = [Individual(ploidy=ploidy) for i in range(self.ninds)]
+        self.ind_dict = dict(zip(self.ids, self.inds))
 
         for i in range(self.ninds):
             ind = self.inds[i]
             ind.id = self.ids[i]
-            ind.idx = i
 
-            father = fathers[i]
-            mother = mothers[i]
-
-            if father != 0:
-                father_ix = self.ind_dict[father]
-                ind.father = self.inds[father_ix]
-                ind.father.children.append(ind)
-            if mother != 0:
-                mother_ix = self.ind_dict[mother]
-                ind.mother = self.inds[mother_ix]
-                ind.mother.children.append(ind)
+            # TODO: This could be a method of class Individual, but for now
+            # that would be fiddly
+            for j, parent in enumerate(parents[i]):
+                if parent != 0:
+                    ind.parents[j] = self.ind_dict[parent]
+                    ind.parents[j].children.append(ind)
 
     def set_samples(self, pop):
         """
@@ -343,19 +335,17 @@ class Pedigree(object):
             for climber in climbers:
                 if climber.time < t:
                     climber.time = t
-                if climber.mother is not None:
-                    next_climbers.append(climber.mother)
-                if climber.father is not None:
-                    next_climbers.append(climber.father)
+                for parent in climber.parents:
+                    if parent is not None:
+                        next_climbers.append(parent)
             climbers = next_climbers
             t += 1
 
         if check:
             for ind in self.inds:
-                if ind.mother is not None:
-                    assert ind.time < ind.mother.time
-                if ind.father is not None:
-                    assert ind.time < ind.father.time
+                for parent in ind.parents:
+                    if parent is not None:
+                        assert ind.time < parent.time
 
     def build_ind_queue(self):
         """
@@ -395,27 +385,29 @@ class Individual(object):
     """
     def __init__(self, ploidy=2):
         self.id = None
-        self.mother = None
-        self.father = None
-        self.children = []
+        self.ploidy = ploidy
+        self.parents =  [None for i in range(ploidy)]
         self.segments = [[] for i in range(ploidy)]
+        self.children = []
         self.sex = None
         self.time = -1
         self.queued = False
 
-        ## For debugging
+        ## For debugging - to ensure we only merge once
         self.merged = False
 
     def __str__(self):
-        mother = None
-        father = None
-        if self.mother is not None:
-            mother = self.mother.id
-        if self.father is not None:
-            father = self.father.id
+        parents = []
+        for p in self.parents:
+            if p is not None:
+                parents.append(str(p.id))
+            else:
+                parents.append("None")
 
-        return "(ID: {}, mother: {}, father: {}, time: {})".format(
-                self.id, mother, father, self.time)
+        parents_str = ",".join(parents)
+
+        return "(ID: {}, time: {}, parents: {})".format(
+                self.id, self.time, parents_str)
 
     def __repr__(self):
         return self.__str__()
@@ -428,10 +420,6 @@ class Individual(object):
         Adds a segment to a parental segment heap, which allows easy merging
         later.
         """
-        if parent_ix > len(self.segments) - 1:
-            raise ValueError("Invalid parent index: " + str(parent_ix) +\
-                    " for parent list of length " + str(len(self.segments)))
-
         heapq.heappush(self.segments[parent_ix], (seg.left, seg))
 
     def num_lineages(self):
@@ -957,20 +945,15 @@ class Simulator(object):
         pedigree
         """
         assert len(self.pedigree.ind_heap) > 0
-        assert self.num_populations == 1 ## <- single pop/pedigree for now
+        assert self.num_populations == 1 ## Single pop/pedigree for now
 
         while len(self.pedigree.ind_heap) > 0:
             next_ind = self.pedigree.pop_ind()
             self.t = next_ind.time
             assert next_ind.num_lineages() > 0
+            assert next_ind.merged is False
 
-            ## NOTE: Inds have a fixed index for maternal/paternal segments
-            maternal_segments = next_ind.segments[0]
-            paternal_segments = next_ind.segments[1]
-            segments_list = [maternal_segments, paternal_segments]
-            parents = [next_ind.mother, next_ind.father]
-
-            for segments, parent in zip(segments_list, parents):
+            for segments, parent in zip(next_ind.segments, next_ind.parents):
                 # If parent is None, we are at a pedigree founder and we stop
                 # climbing
                 if parent is None:
@@ -998,6 +981,8 @@ class Simulator(object):
                 if not parent.queued:
                     self.pedigree.push_ind(parent)
                     parent.queued = True
+
+            next_ind.merged = True
 
 
     def store_arg_edges(self, segment):
