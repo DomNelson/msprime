@@ -2,6 +2,7 @@
 Python version of the simulation algorithm.
 """
 import sys
+import os
 import random
 import argparse
 import heapq
@@ -247,6 +248,193 @@ class Population(object):
         return self._ancestors[indv.label].index(indv)
 
 
+class Pedigree(object):
+    """
+    Class representing a pedigree for use with the DTWF model.
+    """
+    def __init__(self, pedfile=None, ploidy=2):
+        self.inds = []
+        self.num_inds = 0
+        self.samples = []
+        self.ind_heap = []
+        self.ploidy = ploidy
+        self.is_climbing = False
+
+        ## Stores most recently merged segment
+        self.merged_segment = None
+
+        if pedfile is not None:
+            self.load(pedfile, ploidy)
+
+    def load(self, pedfile, ploidy):
+        self.pedfile = pedfile
+        self.ploidy = ploidy
+        ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
+                                dtype=int)
+        self.ids = ped_data[:, 0]
+        parents = ped_data[:, 1:1+ploidy]
+
+        self.ninds = len(self.ids)
+        self.inds = [Individual(ploidy=ploidy) for i in range(self.ninds)]
+        self.ind_dict = dict(zip(self.ids, self.inds))
+
+        for i in range(self.ninds):
+            ind = self.inds[i]
+            ind.id = self.ids[i]
+
+            for j, parent in enumerate(parents[i]):
+                if parent != 0:
+                    ind.parents[j] = self.ind_dict[parent]
+                    ind.parents[j].children.append(ind)
+
+    def set_samples(self):
+        """
+        For now this simply finds all individuals without children - eventually
+        extend to specify specific individuals to simulate.
+        """
+        if len(self.samples) > 0:
+            raise ValueError("Samples already loaded.")
+
+        for ind in self.inds:
+            if len(ind.children) == 0:
+                self.samples.append(ind)
+
+    def load_pop(self, pop):
+        """
+        Loads segments from a given pop into the pedigree samples
+        """
+        if self.num_sample_lineages() != pop.get_num_ancestors():
+            err_str = "Ped samples: " + str(self.num_sample_lineages()) + \
+                    " Samples: " + str(pop.get_num_ancestors()) + \
+                    " - must be equal!"
+            raise ValueError(err_str)
+
+        # for i, anc in enumerate(pop):
+        for i in range(pop.get_num_ancestors()-1, -1, -1):
+            anc = pop.remove(i)
+            # Each individual gets 'ploidy' lineages
+            ind = self.samples[i // self.ploidy]
+            parent_ix = i % self.ploidy
+            ind.add_segment(anc, parent_ix=parent_ix)
+
+        # Add samples to queue to prepare for climbing - might be better if
+        # included in previous loop
+        for ind in self.samples:
+            self.push_ind(ind)
+
+    def assign_times(self, check=False):
+        """
+        For pedigrees without specified times, crudely assigns times to
+        all individuals.
+        """
+        if len(self.samples) == 0:
+            self.set_samples()
+        assert len(self.samples) > 0
+
+        climbers = [s for s in self.samples]
+        t = 0
+        while len(climbers) > 0:
+            next_climbers = []
+            for climber in climbers:
+                if climber.time < t:
+                    climber.time = t
+                for parent in climber.parents:
+                    if parent is not None:
+                        next_climbers.append(parent)
+            climbers = next_climbers
+            t += 1
+
+        if check:
+            for ind in self.inds:
+                for parent in ind.parents:
+                    if parent is not None:
+                        assert ind.time < parent.time
+
+    def build_ind_queue(self):
+        """
+        Set up heap queue of samples, so most recent can be popped for merge.
+        Heapify in case samples are not all at t=0.
+
+        NOTE: This simulation algorithm will require a new implementation of
+        dtwf_generation()
+        """
+        self.ind_heap = [(ind.time, ind) for ind in self.samples]
+        heapq.heapify(self.ind_heap)
+
+    def push_ind(self, ind):
+        """
+        Adds an individual to the heap queue
+        """
+        assert ind.queued == False
+        ind.queued = True
+        heapq.heappush(self.ind_heap, ind)
+
+    def pop_ind(self):
+        """
+        Pops the most recent individual off the heap queue
+        """
+        ind = heapq.heappop(self.ind_heap)
+        assert ind.queued == True
+        ind.queued = False
+
+        return ind
+
+    def num_sample_lineages(self):
+        return len(self.samples) * self.ploidy
+
+    def print_samples(self):
+        for s in self.samples:
+            print(s)
+
+
+class Individual(object):
+    """
+    Class representing a diploid individual in the DTWF model. Trying to make
+    arbitrary ploidy possible at some point in the future.
+    """
+    def __init__(self, ploidy=2):
+        self.id = None
+        self.ploidy = ploidy
+        self.parents =  [None for i in range(ploidy)]
+        self.segments = [[] for i in range(ploidy)]
+        self.children = []
+        self.sex = None
+        self.time = -1
+        self.queued = False
+
+        ## For debugging - to ensure we only merge once
+        self.merged = False
+
+    def __str__(self):
+        parents = []
+        for p in self.parents:
+            if p is not None:
+                parents.append(str(p.id))
+            else:
+                parents.append("None")
+
+        parents_str = ",".join(parents)
+
+        return "(ID: {}, time: {}, parents: {})".format(
+                self.id, self.time, parents_str)
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __lt__(self, other):
+        return self.time < other.time
+
+    def add_segment(self, seg, parent_ix):
+        """
+        Adds a segment to a parental segment heap, which allows easy merging
+        later.
+        """
+        heapq.heappush(self.segments[parent_ix], (seg.left, seg))
+
+    def num_lineages(self):
+        return sum([len(s) for s in self.segments])
+
+
 class TrajectorySimulator(object):
     """
     Class to simulate an allele frequency trajectory on which to condition
@@ -307,7 +495,7 @@ class Simulator(object):
             population_growth_rate_changes, population_size_changes,
             migration_matrix_element_changes, bottlenecks, model='hudson',
             from_ts=None, max_segments=100, num_labels=1, sweep_trajectory=None,
-            full_arg=False, time_slice=None):
+            full_arg=False, time_slice=None, pedigree=None):
         # Must be a square matrix.
         N = len(migration_matrix)
         assert len(sample_configuration) == N
@@ -341,6 +529,8 @@ class Simulator(object):
             self.P[pop_index].set_growth_rate(population_growth_rates[pop_index], 0)
         self.edge_buffer = []
         self.from_ts = from_ts
+        self.pedigree = pedigree
+
         if from_ts is None:
             self.tables = msprime.TableCollection(sequence_length=num_loci)
             for pop_index in range(N):
@@ -364,6 +554,11 @@ class Simulator(object):
             if ts.num_populations != N:
                 raise ValueError("Number of populations in from_ts must match")
             self.initialise_from_ts(ts)
+
+        if pedigree is not None:
+            assert N == 1 # <- only support single pop/pedigree for now
+            pop = self.P[0]
+            pedigree.load_pop(pop)
 
         self.num_ca_events = 0
         self.num_re_events = 0
@@ -690,6 +885,11 @@ class Simulator(object):
         """
         Simulates the algorithm until all loci have coalesced.
         """
+        # NOTE: Currently completes pedigree sims using regular DTWF
+        # by default
+        if self.pedigree is not None:
+            self.dtwf_climb_pedigree()
+
         while self.ancestors_remain():
             self.t += 1
             self.verify()
@@ -744,6 +944,64 @@ class Simulator(object):
                     mig_source = j
                     mig_dest = k
                     self.migration_event(mig_source, mig_dest)
+
+    def dtwf_climb_pedigree(self):
+        """
+        Simulates transmission of ancestral material through a pre-specified
+        pedigree
+        """
+        assert len(self.pedigree.ind_heap) > 0
+        assert self.num_populations == 1 ## Single pop/pedigree for now
+        self.pedigree.is_climbing = True
+
+        # Store founders for adding back to population when climbing is done
+        # TODO: Store as heap to add to population for simultaneous DTWF sims?
+        founder_lineages = []
+
+        while len(self.pedigree.ind_heap) > 0:
+            next_ind = self.pedigree.pop_ind()
+            self.t = next_ind.time
+            assert next_ind.num_lineages() > 0
+            assert next_ind.merged is False
+
+            for segments, parent in zip(next_ind.segments, next_ind.parents):
+                # This parent may not have contributed any ancestral material
+                # to the samples.
+                if len(segments) == 0:
+                    continue
+
+                ## Merge segments inherited from this ind and recombine
+                self.merge_ancestors(segments, 0, 0)
+                merged_segment = self.pedigree.merged_segment
+                self.pedigree.merged_segment = None
+                assert merged_segment.prev == None
+
+                # If parent is None, we are at a pedigree founder and we add
+                # to founder lineages.
+                if parent is None:
+                    founder_lineages.append(merged_segment)
+                    continue
+
+                ## Recombine and climb segments to parents.
+                segs_pair = self.dtwf_recombine(merged_segment)
+                for i, seg in enumerate(segs_pair):
+                    if seg is None:
+                        continue
+                    assert seg.prev is None
+                    parent.add_segment(seg, parent_ix=i)
+
+                if parent.queued is False:
+                    self.pedigree.push_ind(parent)
+
+            next_ind.merged = True
+
+        self.pedigree.is_climbing = False
+
+        # Add lineages back to population.
+        for lineage in founder_lineages:
+            self.P[0].add(lineage)
+
+        self.verify()
 
     def store_arg_edges(self, segment):
         u = len(self.tables.nodes) - 1
@@ -1023,9 +1281,16 @@ class Simulator(object):
             # loop tail; update alpha and integrate it into the state.
             if alpha is not None:
                 if z is None:
-                    pop.add(alpha, label)
                     self.L[alpha.label].set_value(
                         alpha.index, alpha.right - alpha.left - 1)
+                    # Pedigrees don't currently track lineages in Populations,
+                    # so keep reference to merged segments instead.
+                    if (self.pedigree is not None and
+                            self.pedigree.is_climbing is True):
+                        assert self.pedigree.merged_segment is None
+                        self.pedigree.merged_segment = alpha
+                    else:
+                        pop.add(alpha, label)
                 else:
                     if self.full_arg:
                         defrag_required |= z.right == alpha.left
@@ -1305,6 +1570,12 @@ def run_simulate(args):
         traj_sim = TrajectorySimulator(init_freq, end_freq, alpha, args.time_slice)
         sweep_trajectory = traj_sim.run()
         num_labels = 2
+    pedigree = None
+    if args.pedigree_file is not None:
+        pedfile = os.path.expanduser(args.pedigree_file)
+        pedigree = Pedigree(pedfile=pedfile)
+        pedigree.set_samples()
+        pedigree.assign_times(check=True)
     random.seed(args.random_seed)
     s = Simulator(
         n, m, rho, migration_matrix,
@@ -1314,7 +1585,8 @@ def run_simulate(args):
         args.migration_matrix_element_change,
         args.bottleneck, args.model, from_ts=args.from_ts,
         max_segments=10000, num_labels=num_labels, full_arg=args.full_arg,
-        sweep_trajectory=sweep_trajectory, time_slice=args.time_slice)
+        sweep_trajectory=sweep_trajectory, time_slice=args.time_slice,
+        pedigree=pedigree)
     ts = s.simulate()
     ts.dump(args.output_file)
     if args.verbose:
@@ -1365,6 +1637,7 @@ def add_simulator_arguments(parser):
         "--time-slice", type=float, default=1e-6,
         help="The delta_t value for selective sweeps")
     parser.add_argument("--model", default='hudson')
+    parser.add_argument("--pedigree-file", default=None)
     parser.add_argument(
         "--from-ts", "-F", default=None,
         help=(
