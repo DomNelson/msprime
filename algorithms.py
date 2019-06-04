@@ -252,7 +252,7 @@ class Pedigree(object):
     """
     Class representing a pedigree for use with the DTWF model.
     """
-    def __init__(self, pedfile, ploidy=2):
+    def __init__(self, pedfile=None, ploidy=2):
         self.inds = []
         self.num_inds = 0
         self.samples = []
@@ -282,8 +282,6 @@ class Pedigree(object):
             ind = self.inds[i]
             ind.id = self.ids[i]
 
-            # TODO: This could be a method of class Individual, but for now
-            # that would be fiddly
             for j, parent in enumerate(parents[i]):
                 if parent != 0:
                     ind.parents[j] = self.ind_dict[parent]
@@ -367,13 +365,19 @@ class Pedigree(object):
         """
         Adds an individual to the heap queue
         """
+        assert ind.queued == False
+        ind.queued = True
         heapq.heappush(self.ind_heap, ind)
 
     def pop_ind(self):
         """
         Pops the most recent individual off the heap queue
         """
-        return heapq.heappop(self.ind_heap)
+        ind = heapq.heappop(self.ind_heap)
+        assert ind.queued == True
+        ind.queued = False
+
+        return ind
 
     def num_sample_lineages(self):
         return len(self.samples) * self.ploidy
@@ -956,7 +960,6 @@ class Simulator(object):
 
         while len(self.pedigree.ind_heap) > 0:
             next_ind = self.pedigree.pop_ind()
-            next_ind.queued = False
             self.t = next_ind.time
             assert next_ind.num_lineages() > 0
             assert next_ind.merged is False
@@ -974,15 +977,13 @@ class Simulator(object):
                 assert merged_segment.prev == None
 
                 # If parent is None, we are at a pedigree founder and we add
-                # to founder lineages. Otherwise we recombine and climb.
+                # to founder lineages.
                 if parent is None:
                     founder_lineages.append(merged_segment)
                     continue
 
+                ## Recombine and climb segments to parents.
                 segs_pair = self.dtwf_recombine(merged_segment)
-                self.pedigree.merged_segment = None
-
-                ## Climb segments to parents
                 for i, seg in enumerate(segs_pair):
                     if seg is None:
                         continue
@@ -991,7 +992,6 @@ class Simulator(object):
 
                 if parent.queued is False:
                     self.pedigree.push_ind(parent)
-                    parent.queued = True
 
             next_ind.merged = True
 
