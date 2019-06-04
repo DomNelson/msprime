@@ -258,6 +258,7 @@ class Pedigree(object):
         self.samples = []
         self.ind_heap = []
         self.ploidy = ploidy
+        self.is_climbing = False
 
         ## Stores most recently merged segment
         self.merged_segment = None
@@ -288,11 +289,10 @@ class Pedigree(object):
                     ind.parents[j] = self.ind_dict[parent]
                     ind.parents[j].children.append(ind)
 
-    def set_samples(self, pop):
+    def set_samples(self):
         """
-        For now this loads segments from the given pop into pedigree
-        individuals without children - eventually extend to specify specific
-        individuals to simulate.
+        For now this simply finds all individuals without children - eventually
+        extend to specify specific individuals to simulate.
         """
         if len(self.samples) > 0:
             raise ValueError("Samples already loaded.")
@@ -301,13 +301,19 @@ class Pedigree(object):
             if len(ind.children) == 0:
                 self.samples.append(ind)
 
+    def load_pop(self, pop):
+        """
+        Loads segments from a given pop into the pedigree samples
+        """
         if self.num_sample_lineages() != pop.get_num_ancestors():
             err_str = "Ped samples: " + str(self.num_sample_lineages()) + \
                     " Samples: " + str(pop.get_num_ancestors()) + \
                     " - must be equal!"
             raise ValueError(err_str)
 
-        for i, anc in enumerate(pop):
+        # for i, anc in enumerate(pop):
+        for i in range(pop.get_num_ancestors()-1, -1, -1):
+            anc = pop.remove(i)
             # Each individual gets 'ploidy' lineages
             ind = self.samples[i // self.ploidy]
             parent_ix = i % self.ploidy
@@ -317,7 +323,6 @@ class Pedigree(object):
         # included in previous loop
         for ind in self.samples:
             self.push_ind(ind)
-
 
     def assign_times(self, check=False):
         """
@@ -549,9 +554,7 @@ class Simulator(object):
         if pedigree is not None:
             assert N == 1 # <- only support single pop/pedigree for now
             pop = self.P[0]
-            sample_size = sample_configuration[0]
-            pedigree.set_samples(pop)
-            pedigree.assign_times(check=True)
+            pedigree.load_pop(pop)
 
         self.num_ca_events = 0
         self.num_re_events = 0
@@ -711,10 +714,7 @@ class Simulator(object):
         if self.model == 'hudson':
             self.hudson_simulate()
         elif self.model == 'dtwf':
-            if self.pedigree is not None:
-                self.dtwf_climb_pedigree()
-            else:
-                self.dtwf_simulate()
+            self.dtwf_simulate()
         elif self.model == 'single_sweep':
             # self.print_state()
             self.single_sweep_simulate()
@@ -881,14 +881,16 @@ class Simulator(object):
         """
         Simulates the algorithm until all loci have coalesced.
         """
+        # NOTE: Currently completes pedigree sims using regular DTWF
+        # by default
         if self.pedigree is not None:
-            dtwf_climb_pedigree()
-        else:
-            while self.ancestors_remain():
-                self.t += 1
-                self.verify()
+            self.dtwf_climb_pedigree()
 
-                self.dtwf_generation()
+        while self.ancestors_remain():
+            self.t += 1
+            self.verify()
+
+            self.dtwf_generation()
 
     def dtwf_generation(self):
         """
@@ -946,19 +948,20 @@ class Simulator(object):
         """
         assert len(self.pedigree.ind_heap) > 0
         assert self.num_populations == 1 ## Single pop/pedigree for now
+        self.pedigree.is_climbing = True
+
+        # Store founders for adding back to population when climbing is done
+        # TODO: Store as heap to add to population for simultaneous DTWF sims?
+        founder_lineages = []
 
         while len(self.pedigree.ind_heap) > 0:
             next_ind = self.pedigree.pop_ind()
+            next_ind.queued = False
             self.t = next_ind.time
             assert next_ind.num_lineages() > 0
             assert next_ind.merged is False
 
             for segments, parent in zip(next_ind.segments, next_ind.parents):
-                # If parent is None, we are at a pedigree founder and we stop
-                # climbing
-                if parent is None:
-                    continue
-
                 # This parent may not have contributed any ancestral material
                 # to the samples.
                 if len(segments) == 0:
@@ -966,8 +969,16 @@ class Simulator(object):
 
                 ## Merge segments inherited from this ind and recombine
                 self.merge_ancestors(segments, 0, 0)
-
                 merged_segment = self.pedigree.merged_segment
+                self.pedigree.merged_segment = None
+                assert merged_segment.prev == None
+
+                # If parent is None, we are at a pedigree founder and we add
+                # to founder lineages. Otherwise we recombine and climb.
+                if parent is None:
+                    founder_lineages.append(merged_segment)
+                    continue
+
                 segs_pair = self.dtwf_recombine(merged_segment)
                 self.pedigree.merged_segment = None
 
@@ -978,12 +989,19 @@ class Simulator(object):
                     assert seg.prev is None
                     parent.add_segment(seg, parent_ix=i)
 
-                if not parent.queued:
+                if parent.queued is False:
                     self.pedigree.push_ind(parent)
                     parent.queued = True
 
             next_ind.merged = True
 
+        self.pedigree.is_climbing = False
+
+        # Add lineages back to population.
+        for lineage in founder_lineages:
+            self.P[0].add(lineage)
+
+        self.verify()
 
     def store_arg_edges(self, segment):
         u = len(self.tables.nodes) - 1
@@ -1263,12 +1281,16 @@ class Simulator(object):
             # loop tail; update alpha and integrate it into the state.
             if alpha is not None:
                 if z is None:
-                    pop.add(alpha, label)
                     self.L[alpha.label].set_value(
                         alpha.index, alpha.right - alpha.left - 1)
-                    if self.pedigree is not None:
+                    # Pedigrees don't currently track lineages in Populations,
+                    # so keep reference to merged segments instead.
+                    if (self.pedigree is not None and
+                            self.pedigree.is_climbing is True):
                         assert self.pedigree.merged_segment is None
                         self.pedigree.merged_segment = alpha
+                    else:
+                        pop.add(alpha, label)
                 else:
                     if self.full_arg:
                         defrag_required |= z.right == alpha.left
@@ -1552,6 +1574,8 @@ def run_simulate(args):
     if args.pedigree_file is not None:
         pedfile = os.path.expanduser(args.pedigree_file)
         pedigree = Pedigree(pedfile=pedfile)
+        pedigree.set_samples()
+        pedigree.assign_times(check=True)
     random.seed(args.random_seed)
     s = Simulator(
         n, m, rho, migration_matrix,
