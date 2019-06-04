@@ -2364,6 +2364,127 @@ out:
 }
 
 static int
+Simulator_parse_pedigree(Simulator *self, PyObject *pedigree_dict)
+{
+    int ret = -1;
+    size_t num_inds;
+    int ploidy;
+    npy_intp *shape;
+    int *inds = NULL;
+    int *parents = NULL;
+    double *times = NULL;
+    int *is_sample = NULL;
+    PyObject *value = NULL;
+    PyObject *inds_input = NULL;
+    PyArrayObject *inds_array = NULL;
+    PyObject *parents_input = NULL;
+    PyArrayObject *parents_array = NULL;
+    PyObject *times_input = NULL;
+    PyArrayObject *times_array = NULL;
+    PyObject *is_sample_input = NULL;
+    PyArrayObject *is_sample_array = NULL;
+
+    /* npy_intp size; */
+    /* int num_inds, ploidy; */
+    /* int *ped_array = NULL; */
+    /* NpyIter *iterator; */
+    /* NpyIter_IterNextFunc *iternext; */
+    /* char** dataptr; */
+
+    // Steps to loading arrays from dict (tentative) - taken from
+    //    parse_node_table_dict()
+    // 1) For each array, declare PyObject *arrayname_input,
+    //    PyArrayObject *arrayname_array, and dtype* arrayname_data
+    // 2) Using get_table_dict_value(), load array from dict into
+    //    *arrayname_input
+    // 3) Using table_read_column_array(), load arrayname_input
+    //    into arrayname_array
+    // 4) Set arrayname_data = PyArray_DATA(arrayname_array)
+    // 5) In out: include Py_XDECREF(arrayname_array) for all arrays
+
+    /* Get the input values */
+    value = get_dict_number(pedigree_dict, "ninds");
+    if (value == NULL) {
+        goto out;
+    }
+    num_inds = PyLong_AsLong(value);
+
+    value = get_dict_number(pedigree_dict, "ploidy");
+    if (value == NULL) {
+        goto out;
+    }
+    ploidy = PyLong_AsLong(value);
+
+    inds_input = get_table_dict_value(pedigree_dict, "inds", true);
+    if (inds_input == NULL) {
+        goto out;
+    }
+    parents_input = get_table_dict_value(pedigree_dict, "parent_indices", true);
+    if (parents_input == NULL) {
+        goto out;
+    }
+    times_input = get_table_dict_value(pedigree_dict, "times", true);
+    if (times_input == NULL) {
+        goto out;
+    }
+    is_sample_input = get_table_dict_value(pedigree_dict, "is_sample", true);
+    if (is_sample_input == NULL) {
+        goto out;
+    }
+
+    /* Create the arrays */
+    inds_array = table_read_column_array(inds_input, NPY_INT32, &num_inds, true);
+    if (inds_array == NULL) {
+        goto out;
+    }
+    inds = PyArray_DATA(inds_array);
+
+    parents_array = (PyArrayObject *) PyArray_FROMANY(parents_input, NPY_INT32,
+            2, 2, NPY_ARRAY_IN_ARRAY);
+    if (parents_array == NULL) {
+        goto out;
+    }
+    shape = PyArray_DIMS(parents_array);
+    if (num_inds != (size_t) shape[0]) {
+        PyErr_SetString(PyExc_ValueError, "Input array dimensions must be equal.");
+        goto out;
+    }
+    parents = PyArray_DATA(parents_array);
+
+    times_array = table_read_column_array(times_input, NPY_FLOAT64, &num_inds, true);
+    if (times_array == NULL) {
+        goto out;
+    }
+    times = PyArray_DATA(times_array);
+
+    is_sample_array = table_read_column_array(is_sample_input, NPY_INT32, &num_inds,
+            true);
+    if (is_sample_array == NULL) {
+        goto out;
+    }
+    is_sample = PyArray_DATA(is_sample_array);
+
+    if (msp_alloc_pedigree(self->sim, num_inds, ploidy,
+                self->sim->num_samples / 2) != 0) {
+        goto out;
+    }
+    if (msp_set_pedigree(self->sim, num_inds, inds, parents, times, is_sample) != 0) {
+        goto out;
+    }
+
+    ret = 0;
+out:
+    Py_XDECREF(inds_array);
+    Py_XDECREF(parents_array);
+    Py_XDECREF(times_array);
+    Py_XDECREF(is_sample_array);
+    /* if (ped_array != NULL) { */
+    /*     free(ped_array); */
+    /* } */
+    return ret;
+}
+
+static int
 Simulator_parse_migration_matrix(Simulator *self, PyObject *py_migration_matrix)
 {
     int ret = -1;
@@ -2473,11 +2594,13 @@ Simulator_parse_simulation_model(Simulator *self, PyObject *py_model)
     PyObject *smc_s = NULL;
     PyObject *smc_prime_s = NULL;
     PyObject *dtwf_s = NULL;
+    PyObject *wf_ped_s = NULL;
     PyObject *dirac_s = NULL;
     PyObject *beta_s = NULL;
     PyObject *sweep_genic_selection_s = NULL;
     PyObject *value;
     int is_hudson, is_dtwf, is_smc, is_smc_prime, is_dirac, is_beta, is_sweep_genic_selection;
+    int is_wf_ped;
     double reference_size, psi, c, alpha, truncation_point;
 
     if (Simulator_check_sim(self) != 0) {
@@ -2489,6 +2612,10 @@ Simulator_parse_simulation_model(Simulator *self, PyObject *py_model)
     }
     dtwf_s = Py_BuildValue("s", "dtwf");
     if (dtwf_s == NULL) {
+        goto out;
+    }
+    wf_ped_s = Py_BuildValue("s", "wf_ped");
+    if (wf_ped_s == NULL) {
         goto out;
     }
     smc_s = Py_BuildValue("s", "smc");
@@ -2543,6 +2670,13 @@ Simulator_parse_simulation_model(Simulator *self, PyObject *py_model)
     }
     if (is_dtwf) {
         err = msp_set_simulation_model_dtwf(self->sim, reference_size);
+    }
+    is_wf_ped = PyObject_RichCompareBool(py_name, wf_ped_s, Py_EQ);
+    if (is_wf_ped == -1) {
+        goto out;
+    }
+    if (is_wf_ped) {
+        err = msp_set_simulation_model_wf_ped(self->sim, reference_size);
     }
 
     is_smc = PyObject_RichCompareBool(py_name, smc_s, Py_EQ);
@@ -2619,7 +2753,7 @@ Simulator_parse_simulation_model(Simulator *self, PyObject *py_model)
     }
 
     if (! (is_hudson || is_dtwf || is_smc || is_smc_prime || is_dirac
-                || is_beta || is_sweep_genic_selection)) {
+                || is_beta || is_sweep_genic_selection || is_wf_ped)) {
         PyErr_SetString(PyExc_ValueError, "Unknown simulation model");
         goto out;
     }
@@ -2863,13 +2997,14 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     int ret = -1;
     int sim_ret;
     static char *kwlist[] = {"samples", "recombination_map", "random_generator",
-        "tables", "population_configuration", "migration_matrix", "demographic_events",
+        "tables", "population_configuration", "pedigree", "migration_matrix", "demographic_events",
         "model", "avl_node_block_size", "segment_block_size",
         "node_mapping_block_size", "store_migrations", "start_time",
         "store_full_arg", "num_labels", NULL};
     PyObject *py_samples = NULL;
     PyObject *migration_matrix = NULL;
     PyObject *population_configuration = NULL;
+    PyObject *pedigree = NULL;
     PyObject *demographic_events = NULL;
     PyObject *py_model = NULL;
     LightweightTableCollection *tables = NULL;
@@ -2890,12 +3025,13 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     self->sim = NULL;
     self->random_generator = NULL;
     self->recombination_map = NULL;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!O!O!|O!O!O!O!nnnidin", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!O!O!|O!O!O!O!O!nnnidin", kwlist,
             &PyList_Type, &py_samples,
             &RecombinationMapType, &recombination_map,
             &RandomGeneratorType, &random_generator,
             &LightweightTableCollectionType, &tables,
             &PyList_Type, &population_configuration,
+            &PyDict_Type, &pedigree,
             &PyList_Type, &migration_matrix,
             &PyList_Type, &demographic_events,
             &PyDict_Type, &py_model,
@@ -2905,6 +3041,7 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
         goto out;
     }
     self->random_generator = random_generator;
+    /* printf("Random seed: %lu\n", random_generator->seed); */
     self->recombination_map = recombination_map;
     self->tables = tables;
     Py_INCREF(self->random_generator);
@@ -2980,7 +3117,13 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
         handle_input_error(sim_ret);
         goto out;
     }
-
+    if (PyDict_Size(pedigree) > 0) {
+        if (Simulator_parse_pedigree(self, pedigree) != 0) {
+            PyErr_SetString(PyExc_ValueError,
+            "Error parsing pedigree");
+            goto out;
+        }
+    }
     if (population_configuration != NULL) {
         if (Simulator_parse_population_configuration(self, population_configuration) != 0) {
             goto out;

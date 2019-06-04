@@ -28,6 +28,8 @@ import sys
 import os
 import warnings
 import copy
+import logging
+from tqdm import tqdm
 
 import tskit
 import numpy as np
@@ -116,7 +118,8 @@ def model_factory(model, reference_size=1):
         "hudson": StandardCoalescent(reference_size),
         "smc": SmcApproxCoalescent(reference_size),
         "smc_prime": SmcPrimeApproxCoalescent(reference_size),
-        "dtwf": DiscreteTimeWrightFisher(reference_size)
+        "dtwf": DiscreteTimeWrightFisher(reference_size),
+        "wf_ped": WrightFisherPedigree(reference_size)
     }
     if model is None:
         model_instance = StandardCoalescent(reference_size)
@@ -170,6 +173,7 @@ def simulator_factory(
         recombination_rate=None,
         recombination_map=None,
         population_configurations=None,
+        pedigree=None,
         migration_matrix=None,
         samples=None,
         demographic_events=[],
@@ -203,10 +207,17 @@ def simulator_factory(
                 "Cannot specify sample size and population_configurations "
                 "simultaneously.")
         s = Sample(population=0, time=0.0)
+        # In pedigrees samples are diploid individuals
+        if pedigree is not None:
+            sample_size *= 2
         the_samples = [s for _ in range(sample_size)]
     # If we have population configurations we may have embedded sample_size
     # values telling us how many samples to take from each population.
     if population_configurations is not None:
+        if pedigree is not None:
+            raise NotImplementedError(
+                    "Cannot yet specify population configurations "
+                    "and pedigrees simultaneously")
         _check_population_configurations(population_configurations)
         if samples is None:
             the_samples = []
@@ -282,6 +293,11 @@ def simulator_factory(
     sim.random_generator = rng
     if population_configurations is not None:
         sim.set_population_configurations(population_configurations)
+    if pedigree is not None:
+        if sim.model.name.lower() != "wf_ped":
+            raise NotImplementedError(
+                    "Pedigree can only be specified for wf_ped model")
+        sim.set_pedigree(pedigree)
     if migration_matrix is not None:
         sim.set_migration_matrix(migration_matrix)
     if demographic_events is not None:
@@ -297,6 +313,7 @@ def simulate(
         recombination_map=None,
         mutation_rate=None,
         population_configurations=None,
+        pedigree=None,
         migration_matrix=None,
         demographic_events=[],
         samples=None,
@@ -349,6 +366,10 @@ def simulate(
         a single population with a sample of size ``sample_size``
         is assumed.
     :type population_configurations: list or None.
+    :param ndarray pedigree: A pedigree represented as an ndarray with rows
+        formatted as [``ind``, ``father``, ``mother``], where ``0`` denotes
+        an unknown individual.
+    :type pedigree: ndarray or None.
     :param list migration_matrix: The matrix describing the rates
         of migration between all pairs of populations. If :math:`N`
         populations are defined in the ``population_configurations``
@@ -391,7 +412,7 @@ def simulate(
         existing tree sequence (see the ``from_ts`` parameter).
     :param float end_time: If specified, terminate the simulation at the
         specified time. In the returned tree sequence, all rootward paths from
-        samples with time < end_time will end in a node with one child with
+        samples with time < end_time will end in a n de with one child with
         time equal to end_time. Sample nodes with time >= end_time will
         also be present in the output tree sequence. If not specified or ``None``,
         run the simulation until all samples have an MRCA at all positions in
@@ -432,6 +453,7 @@ def simulate(
         recombination_rate=recombination_rate,
         recombination_map=recombination_map,
         population_configurations=population_configurations,
+        pedigree=pedigree,
         migration_matrix=migration_matrix,
         demographic_events=demographic_events,
         samples=samples,
@@ -480,6 +502,10 @@ def simulate(
         return next(_replicate_generator(
             sim, mutation_generator, 1, provenance_dict, end_time))
     else:
+        # if pedigree is not None:
+        #     if num_replicates > 1:
+        #         raise NotImplementedError(
+        #                 "Replicates within pedigrees not yet supported")
         return _replicate_generator(
             sim, mutation_generator, num_replicates, provenance_dict, end_time)
 
@@ -508,6 +534,7 @@ class Simulator(object):
         self.random_generator = None
         self.population_configurations = [
             PopulationConfiguration(initial_size=self.model.reference_size)]
+        self.pedigree = None
         self.migration_matrix = [[0]]
         self.demographic_events = []
         self.model_change_events = []
@@ -631,6 +658,34 @@ class Simulator(object):
         N = len(self.population_configurations)
         self.migration_matrix = [[0 for j in range(N)] for k in range(N)]
 
+    def set_pedigree(self, pedigree):
+        # if isinstance(pedigree, str):
+        #     if len(self.samples) % 2 != 0:
+        #         raise ValueError(
+        #                 "In (diploid) pedigrees, must specify two "
+        #                 "lineages per individual.")
+        #     P = Pedigree(pedigree, num_samples=len(self.samples) // 2)
+        # elif isinstance(pedigree, np.ndarray):
+        #     print("Setting pedigree as int32")
+        #     self.pedigree = pedigree.astype("int32")  # Is cast necessary?
+        # else:
+        #     raise ValueError("Pedigree must be filename or numpy array.")
+
+        if len(self.samples) % 2 != 0:
+            raise ValueError(
+                    "In (diploid) pedigrees, must specify two "
+                    "lineages per individual.")
+
+        if pedigree.is_sample is None:
+            pedigree.set_samples(num_samples=len(self.samples) // 2)
+
+        if pedigree.num_samples * 2 != len(self.samples):
+            raise ValueError(
+                    "{} sample lineages to be simulated, but {} in pedigree".format(
+                        len(self.samples), pedigree.num_samples * 2))
+
+        self.pedigree = pedigree.get_ll_representation()
+
     def set_demographic_events(self, demographic_events):
         err = (
             "Demographic events must be a list of DemographicEvent instances "
@@ -669,6 +724,7 @@ class Simulator(object):
         if self.from_ts is not None:
             self.ll_tables.fromdict(self.from_ts.tables.asdict())
         start_time = -1 if self.start_time is None else self.start_time
+        pedigree = {} if self.pedigree is None else self.pedigree
         ll_sim = _msprime.Simulator(
             samples=self.samples,
             recombination_map=ll_recomb_map,
@@ -678,6 +734,7 @@ class Simulator(object):
             model=ll_simulation_model,
             migration_matrix=ll_migration_matrix,
             population_configuration=ll_population_configuration,
+            pedigree=pedigree,
             demographic_events=ll_demographic_events,
             store_migrations=self.store_migrations,
             store_full_arg=self.store_full_arg,
@@ -926,6 +983,274 @@ class PopulationConfiguration(object):
             "initial_size": self.initial_size,
             "growth_rate": self.growth_rate
         }
+
+
+class Pedigree(object):
+    """
+    Python class for preparing pedigree numpy array for export to C library.
+    """
+    def __init__(self, inds, parent_indices, times, sex=None, ploidy=2):
+        if ploidy != 2:
+            raise NotImplementedError(
+                    "Ploidy != 2 not currently supported")
+
+        if parent_indices.shape[1] != ploidy:
+            raise ValueError(
+                    "Ploidy {} conflicts with number of parents {}".format(
+                        ploidy, parent_indices.shape[1]))
+
+        if np.min(inds) < 0:
+            raise ValueError("Individual IDs must be > 0")
+
+        self.inds = inds.astype(np.int32)
+        self.ninds = len(inds)
+        self.parent_indices = parent_indices.astype(np.int32)
+        self.times = times.astype(np.float64)
+        self.sex = sex
+        self.ploidy = int(ploidy)
+
+        self.is_sample = None
+        self.samples = None
+        self.num_samples = None
+
+    def set_samples(self, num_samples=None, sample_IDs=None, probands_only=True):
+        if num_samples is None and sample_IDs is None:
+            raise ValueError("Must specify one of num_samples of sample_IDs")
+
+        if (num_samples is not None and sample_IDs is not None):
+            raise ValueError("Cannot specify both samples and num_samples.")
+
+        self.is_sample = np.zeros((self.ninds), dtype=np.int32)
+
+        all_indices = range(len(self.inds))
+        proband_indices = set(all_indices).difference(self.parent_indices.ravel())
+
+        if num_samples is not None:
+            self.num_samples = num_samples
+            if self.num_samples > len(proband_indices):
+                raise ValueError((
+                        "Cannot specify more samples ({}) than there are "
+                        "probands in the pedigree ({}) "
+                        ).format(self.num_samples, len(proband_indices)))
+            sample_indices = np.random.choice(
+                list(proband_indices), size=self.num_samples, replace=False)
+
+        elif sample_IDs is not None:
+            self.num_samples = len(sample_IDs)
+
+            indices = all_indices
+            if probands_only:
+                indices = proband_indices
+
+            sample_set = set(sample_IDs)
+            sample_indices = [i for i in indices if self.inds[i] in sample_set]
+
+        if len(sample_indices) != self.num_samples:
+            missing = sample_set.difference([self.inds[i] for i in sample_indices])
+            raise ValueError(
+                    "Samples missing from {}: {}\n{}".format(
+                        ("probands" if probands_only else "pedigree"),
+                        list(missing)[:10],
+                        ('' if len(missing) <= 10 else "(truncated)")))
+
+        self.is_sample[sample_indices] = 1
+
+    def get_proband_indices(self):
+        all_indices = range(len(self.inds))
+        proband_indices = set(all_indices).difference(self.parent_indices.ravel())
+
+        return list(proband_indices)
+
+    def get_ll_representation(self):
+        """
+        Returns the low-level representation of this Pedigree.
+        """
+        return {
+            "ninds": self.ninds,
+            "ploidy": self.ploidy,
+            "inds": self.inds,
+            "parent_indices": self.parent_indices,
+            "times": self.times,
+            "is_sample": self.is_sample
+        }
+
+    @staticmethod
+    def get_times(inds, parent_IDs=None, parent_indices=None, check=False):
+        """
+        For pedigrees without specified times, crudely assigns times to
+        all individuals.
+        """
+        if parent_indices is None and parent_IDs is None:
+            raise ValueError(
+                    "Must specify either parent IDs or parent indices")
+
+        if parent_indices is None:
+            parent_indices = Pedigree.parent_ID_to_index(inds, parent_IDs)
+
+        times = np.zeros(len(inds))
+        all_indices = range(len(inds))
+        proband_indices = set(all_indices).difference(parent_indices.ravel())
+        climber_indices = proband_indices
+
+        t = 0
+        print("Setting pedigree times...")
+        while len(climber_indices) > 0:
+            print("Step: {}".format(t))
+            next_climbers = []
+            for c_idx in tqdm(climber_indices, total=len(climber_indices)):
+                if times[c_idx] < t:
+                    times[c_idx] = t
+
+                next_parent_indices = [p for p in parent_indices[c_idx] if p >= 0]
+                next_climbers.extend(next_parent_indices)
+
+            climber_indices = list(set(next_climbers))
+            t += 1
+
+        if check is True:
+            Pedigree.check_times(inds, parent_indices, times)
+
+        return times
+
+    @staticmethod
+    def check_times(inds, parent_indices, times):
+        for i, ind in enumerate(inds):
+            for parent_ix in parent_indices[i]:
+                if parent_ix >= 0:
+                    t1 = times[i]
+                    t2 = times[parent_ix]
+                    if t1 >= t2:
+                        print("Error! Ind", ind, "time:", t1,
+                              "parent", inds[parent_ix], "time:", t2)
+
+    @staticmethod
+    def parent_ID_to_index(inds, parent_IDs):
+        n_inds, n_parents = parent_IDs.shape
+        parent_indices = np.zeros(parent_IDs.shape, dtype=int)
+        ind_to_index_dict = dict(zip(inds, range(n_inds)))
+
+        if 0 in ind_to_index_dict:
+            raise ValueError(
+                    "Invalid ID: 0 reserved to denote individual"
+                    "not in the genealogy")
+        ind_to_index_dict[0] = -1
+
+        for i in range(n_inds):
+            for j in range(n_parents):
+                parent_ID = parent_IDs[i, j]
+                parent_indices[i, j] = ind_to_index_dict[parent_ID]
+
+        return parent_indices
+
+    @staticmethod
+    def default_npy_format():
+        cols = {
+            "inds": 0,
+            "parent_indices": [1, 2],
+            "times": 3,
+            "is_sample": None,
+            "sexes": None}
+
+        return cols
+
+    @staticmethod
+    def default_text_format():
+        cols = {
+            "inds": 0,
+            "parent_IDs": [1, 2],
+            "times": 3,
+            "is_sample": None,
+            "sexes": None}
+
+        return cols
+
+    @staticmethod
+    def read_txt(pedfile, time_col=None, sex_col=None, **kwargs):
+        """
+        Creates a Pedigree instance from a text file.
+        """
+        cols = Pedigree.default_text_format()
+        cols['times'] = time_col
+        cols['sexes'] = sex_col
+
+        if sex_col:
+            raise NotImplementedError(
+                    "Specifying sex of individuals not yet supported")
+
+        usecols = []
+        for c in cols.values():
+            if isinstance(c, collections.Iterable):
+                usecols.extend(c)
+            elif c is not None:
+                usecols.append(c)
+        usecols = sorted(usecols)
+
+        data = np.genfromtxt(pedfile, skip_header=1, usecols=usecols,
+                             dtype=float)
+
+        inds = data[:, cols["inds"]].astype(int)
+        parent_IDs = data[:, cols["parent_IDs"]].astype(int)
+        parent_indices = Pedigree.parent_ID_to_index(inds, parent_IDs)
+
+        if cols["times"] is not None:
+            times = data[:, cols["times"]]
+        else:
+            times = Pedigree.get_times(inds, parent_indices=parent_indices)
+
+        return Pedigree(inds, parent_indices, times, **kwargs)
+
+    @staticmethod
+    def read_npy(pedarray_file, **kwargs):
+        """
+        Reads pedigree from numpy .npy file with columns:
+
+            ind ID, father array index, mother array index, time
+
+        where time is given in generations.
+        """
+        basename, ext = os.path.split(pedarray_file)
+        pedarray = np.load(pedarray_file)
+
+        cols = Pedigree.default_npy_format()
+        if 'cols' in kwargs:
+            cols = kwargs['cols']
+
+        inds = pedarray[:, cols["inds"]]
+        parent_indices = np.stack(
+                [pedarray[:, i] for i in cols["parent_indices"]], axis=1)
+        parent_indices = parent_indices.astype(int)
+        times = pedarray[:, cols["times"]]
+
+        P = Pedigree(inds, parent_indices, times, **kwargs)
+
+        return P
+
+    def save_npy(self, fname):
+        if self.times is None:
+            raise ValueError("Must specify times before saving to npy format")
+
+        cols = Pedigree.default_npy_format()
+
+        col_nums = []
+        for v in cols.values():
+            if isinstance(v, collections.Iterable):
+                col_nums.extend(v)
+            elif v is not None:
+                col_nums.append(v)
+
+        n_cols = max(col_nums) + 1
+
+        if max(np.diff(col_nums)) > 1:
+            raise ValueError(
+                    "Non-sequential columns in pedigree format: {}".format(
+                        col_nums))
+
+        pedarray = np.zeros((self.ninds, n_cols))
+        pedarray[:, cols['inds']] = self.inds
+        pedarray[:, cols['parent_indices']] = self.parent_indices
+        pedarray[:, cols['times']] = self.times
+
+        np.save(os.path.expanduser(fname), pedarray)
 
 
 class DemographicEvent(object):
@@ -1253,6 +1578,16 @@ class DiscreteTimeWrightFisher(SimulationModel):
 
     """
     name = 'dtwf'
+
+
+class WrightFisherPedigree(SimulationModel):
+    # TODO Complete documentation.
+    """
+    Backwards-time simulations through a pre-specified pedigree, with diploid
+    individuals and back-and-forth recombination. The string ``"wf_ped"`` can
+    be used to refer to this model.
+    """
+    name = 'wf_ped'
 
 
 class ParametricSimulationModel(SimulationModel):

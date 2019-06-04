@@ -450,6 +450,84 @@ read_migration_matrix(msp_t *msp, config_t *config)
 }
 
 static void
+read_pedigree(msp_t *msp, config_t *config)
+{
+    int ret = 0;
+    size_t i, j, size, num_inds, num_cols, num_samples;
+    size_t inds_col, first_parent_col, times_col, sample_flag_col;
+    size_t ploidy = 2;
+    int *ped_array = NULL;
+    int *inds = NULL;
+    int *parents = NULL;
+    double *times = NULL;
+    int *is_sample = NULL;
+    config_setting_t *s;
+    config_setting_t *setting = config_lookup(config, "pedigree");
+
+    num_cols = ploidy + 3; // (ID, father_ix, mother_ix, time, sample_flag)
+    inds_col = 0;
+    first_parent_col = 1;
+    times_col = 3;
+    sample_flag_col = 4;
+
+    if (config_setting_is_array(setting) == CONFIG_FALSE) {
+        fatal_error("pedigree must be an array");
+    }
+    size = (size_t) config_setting_length(setting);
+    num_inds = size / num_cols;
+
+    ped_array = malloc(size * sizeof(int));
+    inds = malloc(num_inds * sizeof(int));
+    parents = malloc(num_inds * ploidy * sizeof(int));
+    times = malloc(num_inds * sizeof(double));
+    is_sample = malloc(num_inds * sizeof(int));
+    if (ped_array == NULL || inds == NULL || parents == NULL || times == NULL ||
+            is_sample == NULL) {
+        fatal_error("Out of memory");
+    }
+
+    num_samples = 0;
+    // Load full pedigree array
+    for (j = 0; j < size; j++) {
+        s = config_setting_get_elem(setting, (unsigned int) j);
+        if (s == NULL) {
+            fatal_error("error reading pedigree[%d]", j);
+        }
+        ped_array[j] = (int) config_setting_get_int(s);
+        if (j % num_cols == sample_flag_col) {
+            assert(ped_array[j] == 0 || ped_array[j] == 1);
+            num_samples += ped_array[j];
+        }
+    }
+    assert(num_samples > 0);
+
+    // Split full array
+    for (i = 0; i < num_inds; i++) {
+        inds[i] = ped_array[i * num_cols + inds_col];
+        for (j = 0; j < ploidy; j++) {
+            parents[i * ploidy + j] = ped_array[i * num_cols + first_parent_col + j];
+        }
+        times[i] = ped_array[i * num_cols + times_col];
+        is_sample[i] = ped_array[i * num_cols + sample_flag_col];
+    }
+    ret = msp_alloc_pedigree(msp, num_inds, ploidy, num_samples);
+    if (ret != 0) {
+        fatal_msprime_error(ret, __LINE__);
+    }
+    /* ret = msp_set_pedigree(msp, num_inds, num_cols, ped_array); */
+    // TODO: Finish fixing pedigree reading
+    ret = msp_set_pedigree(msp, num_inds, inds, parents, times, is_sample);
+    if (ret != 0) {
+        fatal_msprime_error(ret, __LINE__);
+    }
+    free(ped_array);
+    free(inds);
+    free(parents);
+    free(times);
+    free(is_sample);
+}
+
+static void
 read_recomb_map(uint32_t num_loci, recomb_map_t *recomb_map, config_t *config)
 {
     int ret = 0;
@@ -601,6 +679,7 @@ get_configuration(gsl_rng *rng, msp_t *msp, tsk_table_collection_t *tables,
     }
     read_model_config(msp, config);
     read_population_configuration(msp, config);
+    read_pedigree(msp, config);
     read_migration_matrix(msp, config);
     read_demographic_events(msp, config);
     config_destroy(config);
