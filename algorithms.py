@@ -248,43 +248,64 @@ class Population(object):
         return self._ancestors[indv.label].index(indv)
 
 
-class Pedigree(object):
+class PyPedigree(object):
     """
-    Class representing a pedigree for use with the DTWF model.
+    Python class for loading pedigree into numpy for export to C library
     """
     def __init__(self, pedfile=None, ploidy=2):
+        self.pedfile = pedfile
+        self.ploidy = ploidy
+        self.ids = np.array([])
+        self.ninds = 0
+        self.ind_to_index_dict = {}
+        self.ped_array = np.array([])
+
+        if pedfile is not None:
+            self.load_and_sort(self.pedfile)
+
+    def load_and_sort(self, pedfile):
+        cols = (0, 1, 2) # Update for ploidy != 2
+        data = np.genfromtxt(pedfile, skip_header=1, usecols=cols,
+                                dtype=int)
+        self.ids = data[:, 0]
+        self.ninds = len(self.ids)
+        self.ind_to_index_dict = dict(zip(self.ids, range(self.ninds)))
+        # Add special case for 0, which indicates an unknown individual
+        assert 0 not in self.ind_to_index_dict
+        self.ind_to_index_dict[0] = -1
+
+        self.ped_array = np.zeros((self.ninds, len(cols)), dtype=int)
+        for i in range(self.ninds):
+            self.ped_array[i] = [self.ind_to_index_dict[id] for id in data[i]]
+
+
+class Pedigree(object):
+    """
+    Class representing a pedigree for use with the DTWF model, to be
+    implemented in C library
+    """
+    def __init__(self):
         self.inds = []
         self.num_inds = 0
         self.samples = []
         self.ind_heap = []
-        self.ploidy = ploidy
         self.is_climbing = False
 
         ## Stores most recently merged segment
         self.merged_segment = None
 
-        if pedfile is not None:
-            self.load(pedfile, ploidy)
-
-    def load(self, pedfile, ploidy):
-        self.pedfile = pedfile
+    def load(self, ped_array, ploidy):
         self.ploidy = ploidy
-        ped_data = np.genfromtxt(pedfile, skip_header=1, usecols=(0, 1, 2),
-                                dtype=int)
-        self.ids = ped_data[:, 0]
-        parents = ped_data[:, 1:1+ploidy]
-
-        self.ninds = len(self.ids)
+        self.ninds = ped_array.shape[0]
+        parents = ped_array[:, 1:1+ploidy]
         self.inds = [Individual(ploidy=ploidy) for i in range(self.ninds)]
-        self.ind_dict = dict(zip(self.ids, self.inds))
 
         for i in range(self.ninds):
             ind = self.inds[i]
-            ind.id = self.ids[i]
-
             for j, parent in enumerate(parents[i]):
-                if parent != 0:
-                    ind.parents[j] = self.ind_dict[parent]
+                # Unknown inds are represented by -1
+                if parent > 0:
+                    ind.parents[j] = self.inds[parent]
                     ind.parents[j].children.append(ind)
 
     def set_samples(self):
@@ -297,6 +318,7 @@ class Pedigree(object):
 
         for ind in self.inds:
             if len(ind.children) == 0:
+                print(ind)
                 self.samples.append(ind)
 
     def load_pop(self, pop):
@@ -1573,7 +1595,9 @@ def run_simulate(args):
     pedigree = None
     if args.pedigree_file is not None:
         pedfile = os.path.expanduser(args.pedigree_file)
-        pedigree = Pedigree(pedfile=pedfile)
+        py_pedigree = PyPedigree(pedfile=pedfile)
+        pedigree = Pedigree()
+        pedigree.load(py_pedigree.ped_array, py_pedigree.ploidy)
         pedigree.set_samples()
         pedigree.assign_times(check=True)
     random.seed(args.random_seed)
