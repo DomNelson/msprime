@@ -170,6 +170,7 @@ def simulator_factory(
         recombination_rate=None,
         recombination_map=None,
         population_configurations=None,
+        pedigree=None,
         migration_matrix=None,
         samples=None,
         demographic_events=[],
@@ -282,6 +283,8 @@ def simulator_factory(
     sim.random_generator = rng
     if population_configurations is not None:
         sim.set_population_configurations(population_configurations)
+    if pedigree is not None:
+        sim.set_pedigree(pedigree)
     if migration_matrix is not None:
         sim.set_migration_matrix(migration_matrix)
     if demographic_events is not None:
@@ -297,6 +300,7 @@ def simulate(
         recombination_map=None,
         mutation_rate=None,
         population_configurations=None,
+        pedigree=None,
         migration_matrix=None,
         demographic_events=[],
         samples=None,
@@ -349,6 +353,10 @@ def simulate(
         a single population with a sample of size ``sample_size``
         is assumed.
     :type population_configurations: list or None.
+    :param ndarray pedigree: A pedigree represented as an ndarray with rows
+        formatted as [``ind``, ``father``, ``mother``], where ``0`` denotes
+        an unknown individual.
+    :type pedigree: ndarray or None.
     :param list migration_matrix: The matrix describing the rates
         of migration between all pairs of populations. If :math:`N`
         populations are defined in the ``population_configurations``
@@ -432,6 +440,7 @@ def simulate(
         recombination_rate=recombination_rate,
         recombination_map=recombination_map,
         population_configurations=population_configurations,
+        pedigree=pedigree,
         migration_matrix=migration_matrix,
         demographic_events=demographic_events,
         samples=samples,
@@ -508,6 +517,7 @@ class Simulator(object):
         self.random_generator = None
         self.population_configurations = [
             PopulationConfiguration(initial_size=self.model.reference_size)]
+        self.pedigree = None
         self.migration_matrix = [[0]]
         self.demographic_events = []
         self.model_change_events = []
@@ -631,6 +641,9 @@ class Simulator(object):
         N = len(self.population_configurations)
         self.migration_matrix = [[0 for j in range(N)] for k in range(N)]
 
+    def set_pedigree(self, pedigree):
+        self.pedigree = pedigree
+
     def set_demographic_events(self, demographic_events):
         err = (
             "Demographic events must be a list of DemographicEvent instances "
@@ -678,6 +691,7 @@ class Simulator(object):
             model=ll_simulation_model,
             migration_matrix=ll_migration_matrix,
             population_configuration=ll_population_configuration,
+            pedigree=self.pedigree,
             demographic_events=ll_demographic_events,
             store_migrations=self.store_migrations,
             store_full_arg=self.store_full_arg,

@@ -2364,6 +2364,25 @@ out:
 }
 
 static int
+Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
+{
+    int ndim;
+    npy_intp *shape;
+    int i;
+    int ret = -1;
+
+    ndim = PyArray_NDIM(arr);
+    shape = PyArray_SHAPE(arr);
+
+    for (i = 0; i < ndim; i++) {
+        printf("%ld\n", shape[i]);
+    }
+    ret = 0;
+
+    return ret;
+}
+
+static int
 Simulator_parse_migration_matrix(Simulator *self, PyObject *py_migration_matrix)
 {
     int ret = -1;
@@ -2863,13 +2882,14 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     int ret = -1;
     int sim_ret;
     static char *kwlist[] = {"samples", "recombination_map", "random_generator",
-        "tables", "population_configuration", "migration_matrix", "demographic_events",
+        "tables", "population_configuration", "pedigree", "migration_matrix", "demographic_events",
         "model", "avl_node_block_size", "segment_block_size",
         "node_mapping_block_size", "store_migrations", "start_time",
         "store_full_arg", "num_labels", NULL};
     PyObject *py_samples = NULL;
     PyObject *migration_matrix = NULL;
     PyObject *population_configuration = NULL;
+    PyArrayObject *pedigree = NULL;
     PyObject *demographic_events = NULL;
     PyObject *py_model = NULL;
     LightweightTableCollection *tables = NULL;
@@ -2890,12 +2910,13 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     self->sim = NULL;
     self->random_generator = NULL;
     self->recombination_map = NULL;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!O!O!|O!O!O!O!nnnidin", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!O!O!|O!O!O!O!O!nnnidin", kwlist,
             &PyList_Type, &py_samples,
             &RecombinationMapType, &recombination_map,
             &RandomGeneratorType, &random_generator,
             &LightweightTableCollectionType, &tables,
             &PyList_Type, &population_configuration,
+            &PyArray_Type, &pedigree,
             &PyList_Type, &migration_matrix,
             &PyList_Type, &demographic_events,
             &PyDict_Type, &py_model,
@@ -2979,6 +3000,14 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     if (sim_ret != 0) {
         handle_input_error(sim_ret);
         goto out;
+    }
+
+    if (pedigree != NULL) {
+        if (Simulator_parse_pedigree(self, pedigree) != 0) {
+            goto out;
+        }
+    } else {
+        printf("No pedigree\n");
     }
 
     if (population_configuration != NULL) {

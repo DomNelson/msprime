@@ -302,9 +302,10 @@ class Pedigree(object):
 
         for i in range(self.ninds):
             ind = self.inds[i]
+            ind.id = i
             for j, parent in enumerate(parents[i]):
                 # Unknown inds are represented by -1
-                if parent > 0:
+                if parent >= 0:
                     ind.parents[j] = self.inds[parent]
                     ind.parents[j].children.append(ind)
 
@@ -415,7 +416,7 @@ class Individual(object):
     arbitrary ploidy possible at some point in the future.
     """
     def __init__(self, ploidy=2):
-        self.id = None
+        self.id = None # This is the index of the individual in pedigree.inds
         self.ploidy = ploidy
         self.parents =  [None for i in range(ploidy)]
         self.segments = [[] for i in range(ploidy)]
