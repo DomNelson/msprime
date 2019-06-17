@@ -104,6 +104,29 @@ typedef struct {
 } population_t;
 
 typedef struct {
+    uint32_t *inds;
+    size_t num_inds;
+    uint32_t samples;
+    avl_tree_t *ind_heap;
+    bool is_climbing;
+    // Stores the most recently merged segment.
+    segment_t *merged_segment;
+} pedigree_t;
+
+typedef individual_t_t {
+    uint32_t id;
+    size_t ploidy;
+    individual_t_t **parents;
+    segment_t **segments;
+    individual_t_t **children;
+    uint32_t sex;
+    double time;
+    bool queued;
+    // For debugging, to ensure we only merge once.
+    bool merged;
+}
+
+typedef struct {
     double time;
     node_id_t sample;
     population_id_t population_id;
@@ -197,6 +220,7 @@ typedef struct _msp_t {
     simulation_model_t initial_model;
     double *initial_migration_matrix;
     population_t *initial_populations;
+    pedigree_t *pedigree;
     /* allocation block sizes */
     size_t avl_node_block_size;
     size_t node_mapping_block_size;
