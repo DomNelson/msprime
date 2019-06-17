@@ -47,6 +47,14 @@ cmp_individual(const void *a, const void *b) {
     return (ia->id > ib->id) - (ia->id < ib->id);
 }
 
+/* For pedigree individuals we sort on time */
+static int
+cmp_pedigree_individual(const void *a, const void *b) {
+    const individual_t *ia = (const individual_t *) a;
+    const individual_t *ib = (const individual_t *) b;
+    return (ia->time > ib->time) - (ia->time < ib->time);
+}
+
 /* For the segment priority queue we want to sort on the left
  * coordinate and to break ties we arbitrarily use the ID */
 static int
@@ -242,6 +250,120 @@ msp_set_population_configuration(msp_t *self, int population_id, double initial_
         initial_size / model->reference_size;
     self->initial_populations[population_id].growth_rate =
         model->generation_rate_to_model_rate(model, growth_rate);
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_init_individual(individual_t *ind)
+{
+    int ret;
+
+    ind->id = -1;
+    ind->ploidy = 0;
+    // Allocating segments and children is awkward - for now scan through
+    // the pedigree and count the number of children of each ind, then
+    // allocate afterwards when we know how much space we need.
+    ind->parents = NULL;
+    ind->segments = NULL;
+    ind->children = NULL;
+    ind->num_children = 0;
+    ind->sex = -1;
+    ind->time = -1;
+    ind->queued = false;
+    ind->merged = false;
+
+    ret = 0;
+    return ret;
+}
+
+int
+msp_alloc_pedigree(msp_t *self, size_t num_inds)
+{
+    int ret;
+    size_t i;
+    individual_t *ind;
+
+    self->pedigree = malloc(sizeof(pedigree_t));
+    if (self->pedigree == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    self->pedigree->inds = calloc(num_inds, sizeof(individual_t));
+    if (self->pedigree->inds == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    ind = self->pedigree->inds;
+    for (i = 0; i < num_inds; i++) {
+        msp_init_individual(ind);
+        ind++;
+    }
+    self->pedigree->samples = malloc(sizeof(individual_t *));
+    if (self->pedigree->samples == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    self->pedigree->ind_heap = malloc(sizeof(avl_tree_t));
+    if (self->pedigree->ind_heap == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    avl_init_tree(self->pedigree->ind_heap, cmp_pedigree_individual, NULL);
+
+    self->pedigree->num_inds = num_inds;
+    self->pedigree->samples = NULL;
+    self->pedigree->ind_heap = NULL;
+    self->pedigree->is_climbing = false;
+    self->pedigree->merged_segment = NULL;
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_free_pedigree(msp_t *self)
+{
+    int ret = 0;
+    individual_t *ind = NULL;
+    size_t i;
+
+    ind = self->pedigree->inds;
+    if (ind != NULL) {
+        assert(self->pedigree->num_inds > 0);
+        for (i = 0; i < self->pedigree->num_inds; i++) {
+            msp_safe_free(ind->parents);
+            msp_safe_free(ind->segments);
+            msp_safe_free(ind->children);
+            ind++;
+        }
+    }
+    msp_safe_free(self->pedigree->inds);
+    msp_safe_free(self->pedigree->samples);
+    msp_safe_free(self->pedigree->ind_heap);
+
+    msp_safe_free(self->pedigree);
+
+    return ret;
+}
+
+int
+msp_set_pedigree(msp_t *self, int ndim, int *shape, int *pedigree_array,
+        size_t *num_children)
+{
+    int ret;
+    int i;
+    individual_t *ind = NULL;
+
+    assert(ndim == 2);
+    if (shape[0] != self->pedigree->num_inds) {
+        printf("Bad pedigree specification\n");
+        ret = MSP_ERR_BAD_PARAM_VALUE;
+        goto out;
+    }
+
     ret = 0;
 out:
     return ret;
@@ -456,6 +578,8 @@ msp_alloc(msp_t *self,
     self->demographic_events_tail = NULL;
     self->next_demographic_event = NULL;
     self->state = MSP_STATE_NEW;
+    /* Set up pedigree */
+    self->pedigree = NULL;
 out:
     return ret;
 }
@@ -545,6 +669,7 @@ msp_free(msp_t *self)
     msp_safe_free(self->num_migration_events);
     msp_safe_free(self->initial_populations);
     msp_safe_free(self->populations);
+    msp_safe_free(self->pedigree);
     msp_safe_free(self->samples);
     msp_safe_free(self->sampling_events);
     msp_safe_free(self->buffered_edges);
@@ -557,6 +682,9 @@ msp_free(msp_t *self)
     }
     if (self->model.free != NULL) {
         self->model.free(&self->model);
+    }
+    if (self->pedigree != NULL) {
+        msp_free_pedigree(self);
     }
     ret = 0;
     return ret;

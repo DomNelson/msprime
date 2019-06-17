@@ -259,6 +259,7 @@ class PyPedigree(object):
         self.ninds = 0
         self.ind_to_index_dict = {}
         self.ped_array = np.array([])
+        self.num_children = np.array([])
 
         if pedfile is not None:
             self.load_and_sort(self.pedfile)
@@ -275,8 +276,12 @@ class PyPedigree(object):
         self.ind_to_index_dict[0] = -1
 
         self.ped_array = np.zeros((self.ninds, len(cols)), dtype=int)
+        self.num_children = np.zeros(self.ninds), dtype=int)
         for i in range(self.ninds):
-            self.ped_array[i] = [self.ind_to_index_dict[id] for id in data[i]]
+            ind, mother, father = [self.ind_to_index_dict[id] for id in data[i]]
+            self.ped_array[i] = [ind, father, mother]
+            self.num_children[father] += 1
+            self.num_children[mother] += 1
 
 
 class Pedigree(object):

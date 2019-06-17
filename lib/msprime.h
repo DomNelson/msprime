@@ -103,28 +103,29 @@ typedef struct {
     avl_tree_t *ancestors;
 } population_t;
 
+typedef struct individual_t_t {
+    int id;
+    size_t ploidy;
+    struct individual_t_t **parents;
+    segment_t **segments;
+    struct individual_t_t **children;
+    size_t num_children;
+    int sex;
+    double time;
+    bool queued;
+    // For debugging, to ensure we only merge once.
+    bool merged;
+} individual_t;
+
 typedef struct {
-    uint32_t *inds;
+    individual_t *inds;
     size_t num_inds;
-    uint32_t samples;
+    individual_t **samples;
     avl_tree_t *ind_heap;
     bool is_climbing;
     // Stores the most recently merged segment.
     segment_t *merged_segment;
 } pedigree_t;
-
-typedef individual_t_t {
-    uint32_t id;
-    size_t ploidy;
-    individual_t_t **parents;
-    segment_t **segments;
-    individual_t_t **children;
-    uint32_t sex;
-    double time;
-    bool queued;
-    // For debugging, to ensure we only merge once.
-    bool merged;
-}
 
 typedef struct {
     double time;

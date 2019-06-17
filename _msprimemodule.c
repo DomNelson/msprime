@@ -2368,15 +2368,18 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 {
     int ndim;
     npy_intp *shape;
+    int num_bytes;
     int i;
     int ret = -1;
 
     ndim = PyArray_NDIM(arr);
     shape = PyArray_SHAPE(arr);
+    num_bytes = PyArray_NBYTES(arr);
 
     for (i = 0; i < ndim; i++) {
         printf("%ld\n", shape[i]);
     }
+    printf("%d bytes\n", num_bytes);
     ret = 0;
 
     return ret;

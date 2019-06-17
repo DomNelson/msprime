@@ -682,6 +682,7 @@ class Simulator(object):
         if self.from_ts is not None:
             self.ll_tables.fromdict(self.from_ts.tables.asdict())
         start_time = -1 if self.start_time is None else self.start_time
+        pedigree = np.array([]) if self.pedigree is None else self.pedigree
         ll_sim = _msprime.Simulator(
             samples=self.samples,
             recombination_map=ll_recomb_map,
@@ -691,7 +692,7 @@ class Simulator(object):
             model=ll_simulation_model,
             migration_matrix=ll_migration_matrix,
             population_configuration=ll_population_configuration,
-            pedigree=self.pedigree,
+            pedigree=pedigree,
             demographic_events=ll_demographic_events,
             store_migrations=self.store_migrations,
             store_full_arg=self.store_full_arg,
