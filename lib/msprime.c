@@ -47,12 +47,17 @@ cmp_individual(const void *a, const void *b) {
     return (ia->id > ib->id) - (ia->id < ib->id);
 }
 
-/* For pedigree individuals we sort on time */
+/* For pedigree individuals we sort on time and to break ties
+ * we arbitrarily use the ID */
 static int
 cmp_pedigree_individual(const void *a, const void *b) {
     const individual_t *ia = (const individual_t *) a;
     const individual_t *ib = (const individual_t *) b;
-    return (ia->time > ib->time) - (ia->time < ib->time);
+    int ret =  (ia->time > ib->time) - (ia->time < ib->time);
+    if (ret == 0)  {
+        ret = (ia->id > ib->id) - (ia->id < ib->id);
+    }
+    return ret;
 }
 
 /* For the segment priority queue we want to sort on the left
@@ -253,219 +258,6 @@ msp_set_population_configuration(msp_t *self, int population_id, double initial_
     ret = 0;
 out:
     return ret;
-}
-
-int
-msp_alloc_individual(individual_t *ind, size_t ploidy)
-{
-    int ret;
-    size_t i;
-
-    ind->id = -1;
-    ind->sex = -1;
-    ind->time = -1;
-    ind->queued = false;
-    ind->merged = false;
-
-    // Better to allocate these as a block?
-    ind->parents = malloc(ploidy * sizeof(individual_t *));
-    ind->segments = malloc(ploidy * sizeof(avl_tree_t));
-    if (ind->parents == NULL || ind->segments == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    for (i = 0; i < ploidy; i++) {
-        avl_init_tree(&ind->segments[i], cmp_segment_queue, NULL);
-        ind->parents[i] = NULL;
-    }
-    ret = 0;
-out:
-    return ret;
-}
-
-int
-msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_samples)
-{
-    int ret;
-    size_t i;
-    individual_t *ind;
-
-    self->pedigree = malloc(sizeof(pedigree_t));
-    if (self->pedigree == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    self->pedigree->inds = calloc(num_inds, sizeof(individual_t));
-    if (self->pedigree->inds == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    ind = self->pedigree->inds;
-    for (i = 0; i < num_inds; i++) {
-        msp_alloc_individual(ind, ploidy);
-        ind++;
-    }
-    self->pedigree->samples = malloc(num_samples * sizeof(individual_t *));
-    if (self->pedigree->samples == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    self->pedigree->ind_heap = malloc(sizeof(avl_tree_t));
-    if (self->pedigree->ind_heap == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    avl_init_tree(self->pedigree->ind_heap, cmp_pedigree_individual, NULL);
-
-    self->pedigree->num_inds = num_inds;
-    self->pedigree->ploidy = ploidy;
-    self->pedigree->num_samples = num_samples;
-    self->pedigree->is_climbing = false;
-    self->pedigree->merged_segment = NULL;
-
-    ret = 0;
-out:
-    return ret;
-}
-
-int
-msp_free_pedigree(msp_t *self)
-{
-    int ret;
-    individual_t *ind = NULL;
-    size_t i;
-
-    ind = self->pedigree->inds;
-    if (ind != NULL) {
-        assert(self->pedigree->num_inds > 0);
-        for (i = 0; i < self->pedigree->num_inds; i++) {
-            msp_safe_free(ind->parents);
-            msp_safe_free(ind->segments);
-            ind++;
-        }
-    }
-    msp_safe_free(self->pedigree->inds);
-    msp_safe_free(self->pedigree->samples);
-    msp_safe_free(self->pedigree->ind_heap);
-
-    msp_safe_free(self->pedigree);
-
-    ret = 0;
-    return ret;
-}
-
-int
-msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array)
-{
-    int ret;
-    size_t i, j;
-    size_t ID_col, first_parent_col, time_col, sample_flag_col;
-    int parent_ix;
-    int sample_flag;
-    size_t sample_num;
-    individual_t *ind = NULL;
-
-    assert(self->pedigree != NULL);
-    assert(num_cols == 5); // Should be 5 columns (for diploids)
-    if (num_rows != self->pedigree->num_inds) {
-        printf("Wrong number of individuals specified!\n");
-        ret = MSP_ERR_BAD_PARAM_VALUE;
-        goto out;
-    }
-
-    // Feels like a messy way of specifying pedigree format...
-    ID_col = 0;
-    first_parent_col = 1;
-    time_col = first_parent_col + self->pedigree->ploidy;
-    sample_flag_col = time_col + 1;
-
-    ind = self->pedigree->inds;
-    sample_num = 0;
-    for (i = 0; i < self->pedigree->num_inds; i++) {
-        ind->id = pedigree_array[i * num_cols + ID_col];
-        ind->time = pedigree_array[i * num_cols + time_col];
-
-        // Link individuals to parents
-        for (j = 0; j < self->pedigree->ploidy; j++) {
-            parent_ix = pedigree_array[i * num_cols + first_parent_col + j];
-            if (parent_ix > 0) {
-                *(ind->parents + j) = self->pedigree->inds + parent_ix;
-            }
-        }
-
-        // Set samples
-        sample_flag = pedigree_array[i * num_cols + sample_flag_col];
-        if (sample_flag != 0) {
-            assert(sample_flag == 1);
-            self->pedigree->samples[sample_num] = ind;
-            sample_num++;
-        }
-        ind++;
-    }
-    assert(sample_num == self->pedigree->num_samples);
-
-    msp_print_pedigree_inds(self);
-
-    ret = 0;
-out:
-    return ret;
-}
-
-int
-msp_pedigree_load_pop(msp_t *self)
-{
-    int ret;
-    size_t i, sample_ix;
-    population_t *pop;
-    individual_t *sample_ind;
-    avl_node_t *a;
-    label_id_t label = 0;
-
-    assert(self->num_populations == 1); // Only support single pop for now
-
-    pop = &self->populations[0];
-
-    // Move segments from population into pedigree samples
-    i = 0;
-    for (a = pop->ancestors[label].head; a != NULL; a = a->next) {
-        sample_ix = i / self->pedigree->ploidy; // Is this well-defined?
-        sample_ind = self->pedigree->samples[sample_ix];
-
-        avl_unlink_node(&pop->ancestors[label], a);
-        a = avl_insert_node(sample_ind->segments, a);
-        if (a == NULL) {
-            ret = -1;
-            goto out;
-        }
-    }
-    ret = 0;
-out:
-    return ret;
-}
-
-void
-msp_print_pedigree_inds(msp_t *self)
-{
-    individual_t ind;
-    size_t i, j;
-
-    assert(self->pedigree != NULL);
-    assert(self->pedigree->inds != NULL);
-    assert(self->pedigree->num_inds > 0);
-
-    for (i = 0; i < self->pedigree->num_inds; i++) {
-        ind = self->pedigree->inds[i];
-        printf("ID: %d - Time: %f, Parents: [", ind.id, ind.time);
-
-        for (j = 0; j < self->pedigree->ploidy; j++) {
-            if (ind.parents[j] != NULL) {
-                printf(" %d", ind.parents[j]->id);
-            } else {
-                printf(" None");
-            }
-        }
-        printf(" ]\n");
-    }
 }
 
 int
@@ -1492,6 +1284,286 @@ msp_defrag_segment_chain(msp_t *self, segment_t *z)
         y = x;
     }
     return 0;
+}
+
+int
+msp_alloc_individual(individual_t *ind, size_t ploidy)
+{
+    int ret;
+    size_t i;
+
+    ind->id = -1;
+    ind->sex = -1;
+    ind->time = -1;
+    ind->queued = false;
+    ind->merged = false;
+
+    // Better to allocate these as a block?
+    ind->parents = malloc(ploidy * sizeof(individual_t *));
+    ind->segments = malloc(ploidy * sizeof(avl_tree_t));
+    if (ind->parents == NULL || ind->segments == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    for (i = 0; i < ploidy; i++) {
+        avl_init_tree(&ind->segments[i], cmp_segment_queue, NULL);
+        ind->parents[i] = NULL;
+    }
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_samples)
+{
+    int ret;
+    size_t i;
+    individual_t *ind;
+
+    self->pedigree = malloc(sizeof(pedigree_t));
+    if (self->pedigree == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    self->pedigree->inds = calloc(num_inds, sizeof(individual_t));
+    if (self->pedigree->inds == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    ind = self->pedigree->inds;
+    for (i = 0; i < num_inds; i++) {
+        msp_alloc_individual(ind, ploidy);
+        ind++;
+    }
+    self->pedigree->samples = malloc(num_samples * sizeof(individual_t *));
+    if (self->pedigree->samples == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    self->pedigree->ind_heap = malloc(sizeof(avl_tree_t));
+    if (self->pedigree->ind_heap == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    avl_init_tree(self->pedigree->ind_heap, cmp_pedigree_individual, NULL);
+
+    self->pedigree->num_inds = num_inds;
+    self->pedigree->ploidy = ploidy;
+    self->pedigree->num_samples = num_samples;
+    self->pedigree->is_climbing = false;
+    self->pedigree->merged_segment = NULL;
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_free_pedigree(msp_t *self)
+{
+    int ret;
+    individual_t *ind = NULL;
+    size_t i;
+
+    ind = self->pedigree->inds;
+    if (ind != NULL) {
+        assert(self->pedigree->num_inds > 0);
+        for (i = 0; i < self->pedigree->num_inds; i++) {
+            msp_safe_free(ind->parents);
+            msp_safe_free(ind->segments);
+            ind++;
+        }
+    }
+    msp_safe_free(self->pedigree->inds);
+    msp_safe_free(self->pedigree->samples);
+    msp_safe_free(self->pedigree->ind_heap);
+
+    msp_safe_free(self->pedigree);
+
+    ret = 0;
+    return ret;
+}
+
+int
+msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array)
+{
+    int ret;
+    size_t i, j;
+    size_t ID_col, first_parent_col, time_col, sample_flag_col;
+    int parent_ix;
+    int sample_flag;
+    size_t sample_num;
+    individual_t *ind = NULL;
+
+    assert(self->pedigree != NULL);
+    assert(num_cols == 5); // Should be 5 columns (for diploids)
+    if (num_rows != self->pedigree->num_inds) {
+        printf("Wrong number of individuals specified!\n");
+        ret = MSP_ERR_BAD_PARAM_VALUE;
+        goto out;
+    }
+
+    // Feels like a messy way of specifying pedigree format...
+    ID_col = 0;
+    first_parent_col = 1;
+    time_col = first_parent_col + self->pedigree->ploidy;
+    sample_flag_col = time_col + 1;
+
+    ind = self->pedigree->inds;
+    sample_num = 0;
+    for (i = 0; i < self->pedigree->num_inds; i++) {
+        ind->id = pedigree_array[i * num_cols + ID_col];
+        ind->time = pedigree_array[i * num_cols + time_col];
+
+        // Link individuals to parents
+        for (j = 0; j < self->pedigree->ploidy; j++) {
+            parent_ix = pedigree_array[i * num_cols + first_parent_col + j];
+            if (parent_ix > 0) {
+                *(ind->parents + j) = self->pedigree->inds + parent_ix;
+            }
+        }
+
+        // Set samples
+        sample_flag = pedigree_array[i * num_cols + sample_flag_col];
+        if (sample_flag != 0) {
+            assert(sample_flag == 1);
+            self->pedigree->samples[sample_num] = ind;
+            sample_num++;
+        }
+        ind++;
+    }
+    assert(sample_num == self->pedigree->num_samples);
+
+    msp_print_pedigree_inds(self);
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_pedigree_load_pop(msp_t *self)
+{
+    int ret;
+    size_t i, sample_ix;
+    population_t *pop;
+    individual_t *sample_ind;
+    avl_node_t *a;
+    label_id_t label = 0;
+
+    assert(self->num_populations == 1); // Only support single pop for now
+
+    pop = &self->populations[0];
+
+    // Move segments from population into pedigree samples
+    i = 0;
+    for (a = pop->ancestors[label].head; a != NULL; a = a->next) {
+        sample_ix = i / self->pedigree->ploidy; // Is this well-defined?
+        sample_ind = self->pedigree->samples[sample_ix];
+
+        avl_unlink_node(&pop->ancestors[label], a);
+        a = avl_insert_node(sample_ind->segments, a);
+        if (a == NULL) {
+            ret = -1;
+            goto out;
+        }
+    }
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_pedigree_build_ind_queue(msp_t *self)
+{
+    int ret;
+    size_t i;
+    individual_t *ind;
+    avl_node_t *node = NULL;
+
+    assert(self->pedigree->num_samples > 0);
+    assert(self->pedigree->samples != NULL);
+
+    for (i = 0; i < self->pedigree->num_samples; i++) {
+        ind = self->pedigree->samples[i];
+
+        node = msp_alloc_avl_node(self);
+        if (node == NULL) {
+            ret = MSP_ERR_NO_MEMORY;
+            goto out;
+        }
+        avl_init_node(node, ind);
+        node = avl_insert_node(self->pedigree->ind_heap, node);
+        assert(node != NULL);
+    }
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_pedigree_push_ind(msp_t *self, individual_t *ind)
+{
+    int ret;
+    avl_node_t *node;
+
+    assert(ind->queued = false);
+
+    node = msp_alloc_avl_node(self);
+    if (node == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    avl_init_node(node, ind);
+    node = avl_insert_node(self->pedigree->ind_heap, node);
+    assert(node != NULL);
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_pedigree_pop_ind(msp_t *self, individual_t **ind)
+{
+    int ret;
+    avl_node_t *node;
+
+    assert(avl_count(self->pedigree->ind_heap) > 0);
+
+    node = self->pedigree->ind_heap->head;
+    *ind = node->item;
+    msp_free_avl_node(self, node);
+    avl_unlink_node(self->pedigree->ind_heap, node);
+
+    ret = 0;
+    return ret;
+}
+
+void
+msp_print_pedigree_inds(msp_t *self)
+{
+    individual_t ind;
+    size_t i, j;
+
+    assert(self->pedigree != NULL);
+    assert(self->pedigree->inds != NULL);
+    assert(self->pedigree->num_inds > 0);
+
+    for (i = 0; i < self->pedigree->num_inds; i++) {
+        ind = self->pedigree->inds[i];
+        printf("ID: %d - Time: %f, Parents: [", ind.id, ind.time);
+
+        for (j = 0; j < self->pedigree->ploidy; j++) {
+            if (ind.parents[j] != NULL) {
+                printf(" %d", ind.parents[j]->id);
+            } else {
+                printf(" None");
+            }
+        }
+        printf(" ]\n");
+    }
 }
 
 static int MSP_WARN_UNUSED
@@ -3424,7 +3496,9 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         if (self->pedigree != NULL) {
             printf("Loading segments into pop\n");
             msp_pedigree_load_pop(self);
-            printf("Loaded\n");
+            printf("Building ind queue\n");
+            msp_pedigree_build_ind_queue(self);
+            printf("Done\n");
         }
         ret = msp_run_dtwf(self, scaled_time, max_events);
     } else if (self->model.type == MSP_MODEL_SWEEP) {

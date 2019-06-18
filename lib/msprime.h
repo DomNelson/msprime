@@ -372,6 +372,9 @@ int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_s
 int msp_free_pedigree(msp_t *self);
 int msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array);
 int msp_pedigree_load_pop(msp_t *self);
+int msp_pedigree_build_ind_queue(msp_t *self);
+int msp_pedigree_push_ind(msp_t *self, individual_t *ind);
+int msp_pedigree_pop_ind(msp_t *self, individual_t **ind);
 void msp_print_pedigree_inds(msp_t *self);
 
 int msp_initialise(msp_t *self);
