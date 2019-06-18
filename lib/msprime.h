@@ -370,6 +370,7 @@ int msp_alloc_individual(individual_t *ind, size_t ploidy);
 int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy);
 int msp_free_pedigree(msp_t *self);
 int msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array);
+void msp_print_pedigree_inds(msp_t *self);
 
 int msp_initialise(msp_t *self);
 int msp_run(msp_t *self, double max_time, unsigned long max_events);

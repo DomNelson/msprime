@@ -276,6 +276,7 @@ msp_alloc_individual(individual_t *ind, size_t ploidy)
     }
     for (i = 0; i < ploidy; i++) {
         avl_init_tree(&ind->segments[i], cmp_segment_queue, NULL);
+        ind->parents[i] = NULL;
     }
     ret = 0;
 out:
@@ -371,6 +372,8 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
 
     ind = self->pedigree->inds;
     for (i = 0; i < self->pedigree->num_inds; i++) {
+        // First column is ind ID.
+        ind->id = pedigree_array[i * num_cols + 0];
         // Link individuals to parents
         for (j = 0; j < self->pedigree->ploidy; j++) {
             // Parents are columns 1 and 2 (for diploids)
@@ -383,9 +386,36 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
         ind++;
     }
 
+    msp_print_pedigree_inds(self);
+
     ret = 0;
 out:
     return ret;
+}
+
+void
+msp_print_pedigree_inds(msp_t *self)
+{
+    individual_t ind;
+    size_t i, j;
+
+    assert(self->pedigree != NULL);
+    assert(self->pedigree->inds != NULL);
+    assert(self->pedigree->num_inds > 0);
+
+    for (i = 0; i < self->pedigree->num_inds; i++) {
+        ind = self->pedigree->inds[i];
+        printf("ID: %d - Parents: [", ind.id);
+
+        for (j = 0; j < self->pedigree->ploidy; j++) {
+            if (ind.parents[j] != NULL) {
+                printf(" %d", ind.parents[j]->id);
+            } else {
+                printf(" None");
+            }
+        }
+        printf(" ]\n");
+    }
 }
 
 int
