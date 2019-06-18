@@ -450,6 +450,45 @@ read_migration_matrix(msp_t *msp, config_t *config)
 }
 
 static void
+read_pedigree(msp_t *msp, config_t *config)
+{
+    int ret = 0;
+    size_t j, size, num_inds;
+    size_t ploidy = 2;
+    int *ped_array = NULL;
+    config_setting_t *s;
+    config_setting_t *setting = config_lookup(config, "pedigree");
+
+    if (config_setting_is_array(setting) == CONFIG_FALSE) {
+        fatal_error("pedigree must be an array");
+    }
+    size = (size_t) config_setting_length(setting);
+    num_inds = size / (ploidy + 1);
+    ped_array = malloc(size * sizeof(int));
+    if (ped_array == NULL) {
+        fatal_error("Out of memory");
+    }
+    for (j = 0; j < size; j++) {
+        s = config_setting_get_elem(setting, (unsigned int) j);
+        if (s == NULL) {
+            fatal_error("error reading pedigree[%d]", j);
+        }
+        ped_array[j] = (int) config_setting_get_int(s);
+    }
+
+    ret = msp_alloc_pedigree(msp, num_inds, ploidy);
+    if (ret != 0) {
+        fatal_msprime_error(ret, __LINE__);
+    }
+
+    ret = msp_set_pedigree(msp, num_inds, ploidy + 1, ped_array);
+    if (ret != 0) {
+        fatal_msprime_error(ret, __LINE__);
+    }
+    free(ped_array);
+}
+
+static void
 read_recomb_map(uint32_t num_loci, recomb_map_t *recomb_map, config_t *config)
 {
     int ret = 0;
@@ -601,6 +640,7 @@ get_configuration(gsl_rng *rng, msp_t *msp, tsk_table_collection_t *tables,
     }
     read_model_config(msp, config);
     read_population_configuration(msp, config);
+    read_pedigree(msp, config);
     read_migration_matrix(msp, config);
     read_demographic_events(msp, config);
     config_destroy(config);

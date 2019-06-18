@@ -2368,19 +2368,24 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 {
     int ret = -1;
     int i;
-    int ndim;
+    int ndim, num_bytes;
     npy_intp *shape;
-    int num_bytes;
+    int num_inds, ploidy;
 
     ndim = PyArray_NDIM(arr);
     shape = PyArray_SHAPE(arr);
     num_bytes = PyArray_NBYTES(arr);
 
+    assert(ndim == 2);
+    num_inds = shape[0];
+    ploidy = shape[1] - 1; // First column is ind ID, rest are parents.
+
     for (i = 0; i < ndim; i++) {
         printf("%ld\n", shape[i]);
     }
     printf("%d bytes\n", num_bytes);
-    ret = 0;
+
+    ret = msp_alloc_pedigree(self->sim, num_inds, ploidy);
 
     return ret;
 }

@@ -107,7 +107,6 @@ typedef struct individual_t_t {
     int id;
     struct individual_t_t **parents;
     avl_tree_t *segments;
-    size_t num_children;
     int sex;
     double time;
     bool queued;
@@ -366,6 +365,11 @@ int msp_add_simple_bottleneck(msp_t *self, double time, int population_id,
         double intensity);
 int msp_add_instantaneous_bottleneck(msp_t *self, double time, int population_id,
         double strength);
+
+int msp_alloc_individual(individual_t *ind, size_t ploidy);
+int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy);
+int msp_free_pedigree(msp_t *self);
+int msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array);
 
 int msp_initialise(msp_t *self);
 int msp_run(msp_t *self, double max_time, unsigned long max_events);

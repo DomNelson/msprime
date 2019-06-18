@@ -256,21 +256,10 @@ out:
 }
 
 int
-msp_init_individual(individual_t *ind)
-{
-    int ret;
-
-
-    ret = 0;
-    return ret;
-}
-
-int
 msp_alloc_individual(individual_t *ind, size_t ploidy)
 {
     int ret;
     size_t i;
-    avl_tree_t *Q = NULL;
 
     ind->id = -1;
     ind->sex = -1;
@@ -285,11 +274,9 @@ msp_alloc_individual(individual_t *ind, size_t ploidy)
         ret = MSP_ERR_NO_MEMORY;
         goto out;
     }
-
     for (i = 0; i < ploidy; i++) {
-        avl_init_tree(&Q[i], cmp_segment_queue, NULL);
+        avl_init_tree(&ind->segments[i], cmp_segment_queue, NULL);
     }
-
     ret = 0;
 out:
     return ret;
@@ -330,8 +317,7 @@ msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy)
     avl_init_tree(self->pedigree->ind_heap, cmp_pedigree_individual, NULL);
 
     self->pedigree->num_inds = num_inds;
-    self->pedigree->samples = NULL;
-    self->pedigree->ind_heap = NULL;
+    self->pedigree->ploidy = ploidy;
     self->pedigree->is_climbing = false;
     self->pedigree->merged_segment = NULL;
 
@@ -343,7 +329,7 @@ out:
 int
 msp_free_pedigree(msp_t *self)
 {
-    int ret = 0;
+    int ret;
     individual_t *ind = NULL;
     size_t i;
 
@@ -362,24 +348,22 @@ msp_free_pedigree(msp_t *self)
 
     msp_safe_free(self->pedigree);
 
+    ret = 0;
     return ret;
 }
 
 int
-msp_set_pedigree(msp_t *self, int ndim, int *shape, int *pedigree_array)
+msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array)
 {
     int ret;
     size_t i, j;
     int parent_ix;
-    size_t nrows, ncols;
     individual_t *ind = NULL;
 
-    assert(ndim == 2);
-    nrows = shape[0];
-    ncols = shape[1];
+    assert(self->pedigree != NULL);
 
-    assert(ncols == 3); // Should be 3 columns
-    if (nrows != self->pedigree->num_inds) {
+    assert(num_cols == 3); // Should be 3 columns
+    if (num_rows != self->pedigree->num_inds) {
         printf("Wrong number of individuals specified!\n");
         ret = MSP_ERR_BAD_PARAM_VALUE;
         goto out;
@@ -389,18 +373,15 @@ msp_set_pedigree(msp_t *self, int ndim, int *shape, int *pedigree_array)
     for (i = 0; i < self->pedigree->num_inds; i++) {
         // Link individuals to parents
         for (j = 0; j < self->pedigree->ploidy; j++) {
-            // Parents are columns 1 and 2
-            parent_ix = pedigree_array[i * ncols + j + 1];
+            // Parents are columns 1 and 2 (for diploids)
+            parent_ix = pedigree_array[i * num_cols + j + 1];
             if (parent_ix > 0) {
                 // TODO Not sure about this...?
                 *(ind->parents + j) = self->pedigree->inds + parent_ix;
             }
         }
-        msp_alloc_individual(ind, self->pedigree->ploidy);
         ind++;
     }
-
-    printf("Pedigree loaded!\n");
 
     ret = 0;
 out:
@@ -707,7 +688,6 @@ msp_free(msp_t *self)
     msp_safe_free(self->num_migration_events);
     msp_safe_free(self->initial_populations);
     msp_safe_free(self->populations);
-    msp_safe_free(self->pedigree);
     msp_safe_free(self->samples);
     msp_safe_free(self->sampling_events);
     msp_safe_free(self->buffered_edges);
