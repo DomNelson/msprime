@@ -120,7 +120,7 @@ typedef struct {
     size_t ploidy;
     individual_t **samples;
     size_t num_samples;
-    avl_tree_t *ind_heap;
+    avl_tree_t ind_heap;
     bool is_climbing;
     // Stores the most recently merged segment.
     segment_t *merged_segment;
@@ -375,6 +375,9 @@ int msp_pedigree_load_pop(msp_t *self);
 int msp_pedigree_build_ind_queue(msp_t *self);
 int msp_pedigree_push_ind(msp_t *self, individual_t *ind);
 int msp_pedigree_pop_ind(msp_t *self, individual_t **ind);
+int msp_pedigree_add_individual_segment(msp_t *self, individual_t *ind,
+        segment_t *segment, size_t parent_ix);
+int msp_pedigree_climb(msp_t *self);
 void msp_print_pedigree_inds(msp_t *self);
 
 int msp_initialise(msp_t *self);
