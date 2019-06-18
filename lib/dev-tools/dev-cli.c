@@ -479,6 +479,7 @@ read_pedigree(msp_t *msp, config_t *config)
         }
         ped_array[j] = (int) config_setting_get_int(s);
         if (j % num_cols == sample_flag_col) {
+            assert(ped_array[j] == 0 || ped_array[j] == 1);
             num_samples += ped_array[j];
         }
     }

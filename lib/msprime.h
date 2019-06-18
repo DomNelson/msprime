@@ -119,6 +119,7 @@ typedef struct {
     size_t num_inds;
     size_t ploidy;
     individual_t **samples;
+    size_t num_samples;
     avl_tree_t *ind_heap;
     bool is_climbing;
     // Stores the most recently merged segment.

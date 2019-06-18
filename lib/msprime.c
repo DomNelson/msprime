@@ -319,6 +319,7 @@ msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_sampl
 
     self->pedigree->num_inds = num_inds;
     self->pedigree->ploidy = ploidy;
+    self->pedigree->num_samples = num_samples;
     self->pedigree->is_climbing = false;
     self->pedigree->merged_segment = NULL;
 
@@ -358,18 +359,13 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
 {
     int ret;
     size_t i, j;
-    size_t ID_col, first_parent_col, time_col;//, sample_flag_col;
+    size_t ID_col, first_parent_col, time_col, sample_flag_col;
     int parent_ix;
+    int sample_flag;
+    size_t sample_num;
     individual_t *ind = NULL;
 
     assert(self->pedigree != NULL);
-
-    // Feels like a messy way of specifying pedigree format...
-    ID_col = 0;
-    first_parent_col = 1;
-    time_col = first_parent_col + self->pedigree->ploidy;
-    /* sample_flag_col = time_col + 1; */
-
     assert(num_cols == 5); // Should be 5 columns (for diploids)
     if (num_rows != self->pedigree->num_inds) {
         printf("Wrong number of individuals specified!\n");
@@ -377,9 +373,17 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
         goto out;
     }
 
+    // Feels like a messy way of specifying pedigree format...
+    ID_col = 0;
+    first_parent_col = 1;
+    time_col = first_parent_col + self->pedigree->ploidy;
+    sample_flag_col = time_col + 1;
+
     ind = self->pedigree->inds;
+    sample_num = 0;
     for (i = 0; i < self->pedigree->num_inds; i++) {
         ind->id = pedigree_array[i * num_cols + ID_col];
+        ind->time = pedigree_array[i * num_cols + time_col];
 
         // Link individuals to parents
         for (j = 0; j < self->pedigree->ploidy; j++) {
@@ -388,9 +392,17 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
                 *(ind->parents + j) = self->pedigree->inds + parent_ix;
             }
         }
-        ind->time = pedigree_array[i * num_cols + time_col];
+
+        // Set samples
+        sample_flag = pedigree_array[i * num_cols + sample_flag_col];
+        if (sample_flag != 0) {
+            assert(sample_flag == 1);
+            self->pedigree->samples[sample_num] = ind;
+            sample_num++;
+        }
         ind++;
     }
+    assert(sample_num == self->pedigree->num_samples);
 
     msp_print_pedigree_inds(self);
 
