@@ -411,6 +411,38 @@ out:
     return ret;
 }
 
+int
+msp_pedigree_load_pop(msp_t *self)
+{
+    int ret;
+    size_t i, sample_ix;
+    population_t *pop;
+    individual_t *sample_ind;
+    avl_node_t *a;
+    label_id_t label = 0;
+
+    assert(self->num_populations == 1); // Only support single pop for now
+
+    pop = &self->populations[0];
+
+    // Move segments from population into pedigree samples
+    i = 0;
+    for (a = pop->ancestors[label].head; a != NULL; a = a->next) {
+        sample_ix = i / self->pedigree->ploidy; // Is this well-defined?
+        sample_ind = self->pedigree->samples[sample_ix];
+
+        avl_unlink_node(&pop->ancestors[label], a);
+        a = avl_insert_node(sample_ind->segments, a);
+        if (a == NULL) {
+            ret = -1;
+            goto out;
+        }
+    }
+    ret = 0;
+out:
+    return ret;
+}
+
 void
 msp_print_pedigree_inds(msp_t *self)
 {
@@ -3389,6 +3421,11 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         goto out;
     }
     if (self->model.type == MSP_MODEL_DTWF) {
+        if (self->pedigree != NULL) {
+            printf("Loading segments into pop\n");
+            msp_pedigree_load_pop(self);
+            printf("Loaded\n");
+        }
         ret = msp_run_dtwf(self, scaled_time, max_events);
     } else if (self->model.type == MSP_MODEL_SWEEP) {
         /* FIXME making sweep atomic for now as it's non-renentrant */
