@@ -358,12 +358,18 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
 {
     int ret;
     size_t i, j;
+    size_t ID_col, first_parent_col, time_col;
     int parent_ix;
     individual_t *ind = NULL;
 
     assert(self->pedigree != NULL);
 
-    assert(num_cols == 3); // Should be 3 columns
+    // Might be a better way of specifying array format
+    ID_col = 0;
+    first_parent_col = 1;
+    time_col = first_parent_col + self->pedigree->ploidy;
+
+    assert(num_cols == 4); // Should be 4 columns (for diploids)
     if (num_rows != self->pedigree->num_inds) {
         printf("Wrong number of individuals specified!\n");
         ret = MSP_ERR_BAD_PARAM_VALUE;
@@ -372,17 +378,16 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
 
     ind = self->pedigree->inds;
     for (i = 0; i < self->pedigree->num_inds; i++) {
-        // First column is ind ID.
-        ind->id = pedigree_array[i * num_cols + 0];
+        ind->id = pedigree_array[i * num_cols + ID_col];
+
         // Link individuals to parents
         for (j = 0; j < self->pedigree->ploidy; j++) {
-            // Parents are columns 1 and 2 (for diploids)
-            parent_ix = pedigree_array[i * num_cols + j + 1];
+            parent_ix = pedigree_array[i * num_cols + first_parent_col + j];
             if (parent_ix > 0) {
-                // TODO Not sure about this...?
                 *(ind->parents + j) = self->pedigree->inds + parent_ix;
             }
         }
+        ind->time = pedigree_array[i * num_cols + time_col];
         ind++;
     }
 
@@ -405,7 +410,7 @@ msp_print_pedigree_inds(msp_t *self)
 
     for (i = 0; i < self->pedigree->num_inds; i++) {
         ind = self->pedigree->inds[i];
-        printf("ID: %d - Parents: [", ind.id);
+        printf("ID: %d - Time: %f, Parents: [", ind.id, ind.time);
 
         for (j = 0; j < self->pedigree->ploidy; j++) {
             if (ind.parents[j] != NULL) {

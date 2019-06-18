@@ -463,7 +463,7 @@ read_pedigree(msp_t *msp, config_t *config)
         fatal_error("pedigree must be an array");
     }
     size = (size_t) config_setting_length(setting);
-    num_inds = size / (ploidy + 1);
+    num_inds = size / (ploidy + 2);
     ped_array = malloc(size * sizeof(int));
     if (ped_array == NULL) {
         fatal_error("Out of memory");
@@ -475,13 +475,11 @@ read_pedigree(msp_t *msp, config_t *config)
         }
         ped_array[j] = (int) config_setting_get_int(s);
     }
-
     ret = msp_alloc_pedigree(msp, num_inds, ploidy);
     if (ret != 0) {
         fatal_msprime_error(ret, __LINE__);
     }
-
-    ret = msp_set_pedigree(msp, num_inds, ploidy + 1, ped_array);
+    ret = msp_set_pedigree(msp, num_inds, ploidy + 2, ped_array);
     if (ret != 0) {
         fatal_msprime_error(ret, __LINE__);
     }
