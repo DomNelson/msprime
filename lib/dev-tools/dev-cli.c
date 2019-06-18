@@ -453,33 +453,42 @@ static void
 read_pedigree(msp_t *msp, config_t *config)
 {
     int ret = 0;
-    size_t j, size, num_inds;
+    size_t j, size, num_inds, num_cols, num_samples, sample_flag_col;
     size_t ploidy = 2;
     int *ped_array = NULL;
     config_setting_t *s;
     config_setting_t *setting = config_lookup(config, "pedigree");
 
+    num_cols = ploidy + 3; // (ID, father_ix, mother_ix, time, sample_flag)
+    sample_flag_col = 4;
+
     if (config_setting_is_array(setting) == CONFIG_FALSE) {
         fatal_error("pedigree must be an array");
     }
     size = (size_t) config_setting_length(setting);
-    num_inds = size / (ploidy + 2);
+    num_inds = size / num_cols;
     ped_array = malloc(size * sizeof(int));
     if (ped_array == NULL) {
         fatal_error("Out of memory");
     }
+    num_samples = 0;
     for (j = 0; j < size; j++) {
         s = config_setting_get_elem(setting, (unsigned int) j);
         if (s == NULL) {
             fatal_error("error reading pedigree[%d]", j);
         }
         ped_array[j] = (int) config_setting_get_int(s);
+        if (j % num_cols == sample_flag_col) {
+            num_samples += ped_array[j];
+        }
     }
-    ret = msp_alloc_pedigree(msp, num_inds, ploidy);
+    printf("%ld samples\n", num_samples);
+    assert(num_samples > 0);
+    ret = msp_alloc_pedigree(msp, num_inds, ploidy, num_samples);
     if (ret != 0) {
         fatal_msprime_error(ret, __LINE__);
     }
-    ret = msp_set_pedigree(msp, num_inds, ploidy + 2, ped_array);
+    ret = msp_set_pedigree(msp, num_inds, num_cols, ped_array);
     if (ret != 0) {
         fatal_msprime_error(ret, __LINE__);
     }

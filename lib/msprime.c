@@ -284,7 +284,7 @@ out:
 }
 
 int
-msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy)
+msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_samples)
 {
     int ret;
     size_t i;
@@ -305,7 +305,7 @@ msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy)
         msp_alloc_individual(ind, ploidy);
         ind++;
     }
-    self->pedigree->samples = malloc(sizeof(individual_t *));
+    self->pedigree->samples = malloc(num_samples * sizeof(individual_t *));
     if (self->pedigree->samples == NULL) {
         ret = MSP_ERR_NO_MEMORY;
         goto out;
@@ -358,18 +358,19 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
 {
     int ret;
     size_t i, j;
-    size_t ID_col, first_parent_col, time_col;
+    size_t ID_col, first_parent_col, time_col;//, sample_flag_col;
     int parent_ix;
     individual_t *ind = NULL;
 
     assert(self->pedigree != NULL);
 
-    // Might be a better way of specifying array format
+    // Feels like a messy way of specifying pedigree format...
     ID_col = 0;
     first_parent_col = 1;
     time_col = first_parent_col + self->pedigree->ploidy;
+    /* sample_flag_col = time_col + 1; */
 
-    assert(num_cols == 4); // Should be 4 columns (for diploids)
+    assert(num_cols == 5); // Should be 5 columns (for diploids)
     if (num_rows != self->pedigree->num_inds) {
         printf("Wrong number of individuals specified!\n");
         ret = MSP_ERR_BAD_PARAM_VALUE;
