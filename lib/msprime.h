@@ -105,10 +105,8 @@ typedef struct {
 
 typedef struct individual_t_t {
     int id;
-    size_t ploidy;
     struct individual_t_t **parents;
-    segment_t **segments;
-    struct individual_t_t **children;
+    avl_tree_t *segments;
     size_t num_children;
     int sex;
     double time;
@@ -120,6 +118,7 @@ typedef struct individual_t_t {
 typedef struct {
     individual_t *inds;
     size_t num_inds;
+    size_t ploidy;
     individual_t **samples;
     avl_tree_t *ind_heap;
     bool is_climbing;

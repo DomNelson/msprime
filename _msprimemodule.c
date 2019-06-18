@@ -2366,11 +2366,11 @@ out:
 static int
 Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 {
+    int ret = -1;
+    int i;
     int ndim;
     npy_intp *shape;
     int num_bytes;
-    int i;
-    int ret = -1;
 
     ndim = PyArray_NDIM(arr);
     shape = PyArray_SHAPE(arr);

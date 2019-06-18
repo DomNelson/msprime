@@ -260,26 +260,43 @@ msp_init_individual(individual_t *ind)
 {
     int ret;
 
-    ind->id = -1;
-    ind->ploidy = 0;
-    // Allocating segments and children is awkward - for now scan through
-    // the pedigree and count the number of children of each ind, then
-    // allocate afterwards when we know how much space we need.
-    ind->parents = NULL;
-    ind->segments = NULL;
-    ind->children = NULL;
-    ind->num_children = 0;
-    ind->sex = -1;
-    ind->time = -1;
-    ind->queued = false;
-    ind->merged = false;
 
     ret = 0;
     return ret;
 }
 
 int
-msp_alloc_pedigree(msp_t *self, size_t num_inds)
+msp_alloc_individual(individual_t *ind, size_t ploidy)
+{
+    int ret;
+    size_t i;
+    avl_tree_t *Q = NULL;
+
+    ind->id = -1;
+    ind->sex = -1;
+    ind->time = -1;
+    ind->queued = false;
+    ind->merged = false;
+
+    // Better to allocate these as a block?
+    ind->parents = malloc(ploidy * sizeof(individual_t *));
+    ind->segments = malloc(ploidy * sizeof(avl_tree_t));
+    if (ind->parents == NULL || ind->segments == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+
+    for (i = 0; i < ploidy; i++) {
+        avl_init_tree(&Q[i], cmp_segment_queue, NULL);
+    }
+
+    ret = 0;
+out:
+    return ret;
+}
+
+int
+msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy)
 {
     int ret;
     size_t i;
@@ -297,7 +314,7 @@ msp_alloc_pedigree(msp_t *self, size_t num_inds)
     }
     ind = self->pedigree->inds;
     for (i = 0; i < num_inds; i++) {
-        msp_init_individual(ind);
+        msp_alloc_individual(ind, ploidy);
         ind++;
     }
     self->pedigree->samples = malloc(sizeof(individual_t *));
@@ -336,7 +353,6 @@ msp_free_pedigree(msp_t *self)
         for (i = 0; i < self->pedigree->num_inds; i++) {
             msp_safe_free(ind->parents);
             msp_safe_free(ind->segments);
-            msp_safe_free(ind->children);
             ind++;
         }
     }
@@ -350,19 +366,41 @@ msp_free_pedigree(msp_t *self)
 }
 
 int
-msp_set_pedigree(msp_t *self, int ndim, int *shape, int *pedigree_array,
-        size_t *num_children)
+msp_set_pedigree(msp_t *self, int ndim, int *shape, int *pedigree_array)
 {
     int ret;
-    int i;
+    size_t i, j;
+    int parent_ix;
+    size_t nrows, ncols;
     individual_t *ind = NULL;
 
     assert(ndim == 2);
-    if (shape[0] != self->pedigree->num_inds) {
-        printf("Bad pedigree specification\n");
+    nrows = shape[0];
+    ncols = shape[1];
+
+    assert(ncols == 3); // Should be 3 columns
+    if (nrows != self->pedigree->num_inds) {
+        printf("Wrong number of individuals specified!\n");
         ret = MSP_ERR_BAD_PARAM_VALUE;
         goto out;
     }
+
+    ind = self->pedigree->inds;
+    for (i = 0; i < self->pedigree->num_inds; i++) {
+        // Link individuals to parents
+        for (j = 0; j < self->pedigree->ploidy; j++) {
+            // Parents are columns 1 and 2
+            parent_ix = pedigree_array[i * ncols + j + 1];
+            if (parent_ix > 0) {
+                // TODO Not sure about this...?
+                *(ind->parents + j) = self->pedigree->inds + parent_ix;
+            }
+        }
+        msp_alloc_individual(ind, self->pedigree->ploidy);
+        ind++;
+    }
+
+    printf("Pedigree loaded!\n");
 
     ret = 0;
 out:
