@@ -2376,7 +2376,6 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
     NpyIter *iterator;
     NpyIter_IterNextFunc *iternext;
     char** dataptr;
-    npy_intp* strideptr,* innersizeptr;
 
     ndim = PyArray_NDIM(arr);
     shape = PyArray_SHAPE(arr);
@@ -2400,35 +2399,16 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
     ped_array = malloc(size * sizeof(int));
     printf("Loading pedigree\n");
 
-    /* iterator = PyArray_IterNew((PyObject *) arr); */
-    /* i = 0; */
-    /* while (PyArray_ITER_NOTDONE(iterator) == true) { */
-    /*     printf("i = %d\n", i); */
-    /*     ped_array[i] = (int) *PyArray_ITER_DATA(iterator); */
-    /*     PyArray_ITER_NEXT(iterator); */
-    /*     printf("%d\n", ped_array[i]); */
-    /*     i++; */
-    /* } */
-
     iterator = NpyIter_New(arr, NPY_ITER_READONLY,
                                 NPY_CORDER, NPY_NO_CASTING, NULL);
     iternext = NpyIter_GetIterNext(iterator, NULL);
     /* The location of the data pointer which the iterator may update */
     dataptr = NpyIter_GetDataPtrArray(iterator);
-    /* The location of the stride which the iterator may update */
-    strideptr = NpyIter_GetInnerStrideArray(iterator);
-    /* The location of the inner loop size which the iterator may update */
-    innersizeptr = NpyIter_GetInnerLoopSizePtr(iterator);
 
     i = 0;
     do {
-        /* Get the inner loop data/stride/count values */
-        char* data = *dataptr;
-        npy_intp stride = *strideptr;
-        npy_intp count = *innersizeptr;
-        /* #<{(| use the addresses dataptr[0], ... dataptr[nop-1] |)}># */
-        /* printf("i = %d, value %d\n", i, (int) *dataptr[i]); */
-        /* ped_array[i] = *dataptr[i]; */
+        printf("i = %d, value %d\n", i, (int) **dataptr);
+        ped_array[i] = (int) **dataptr;
         i++;
     } while (iternext(iterator));
 
