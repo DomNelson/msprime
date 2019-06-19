@@ -2958,7 +2958,7 @@ msp_pedigree_climb(msp_t *self)
         if (ret != 0) {
             goto out;
         }
-        /* msp_print_individual(self, *ind); */
+        msp_print_individual(self, *ind);
         self->time = ind->time;
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
@@ -3025,7 +3025,9 @@ msp_pedigree_climb(msp_t *self)
         ind->merged = true;
     }
     self->pedigree->is_climbing = false;
-    msp_verify(self);
+
+    printf("Verifying\n");
+    msp_verify_segments(self);
 
     ret = 0;
 out:
@@ -3652,10 +3654,12 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
             if (ret != 0) {
                 goto out;
             }
+            printf("Starting pedigree climbing\n");
             ret = msp_pedigree_climb(self);
             if (ret != 0) {
                 goto out;
             }
+            printf("Climbing complete\n");
         }
         ret = msp_run_dtwf(self, scaled_time, max_events);
     } else if (self->model.type == MSP_MODEL_SWEEP) {
