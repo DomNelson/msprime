@@ -368,10 +368,13 @@ int msp_add_instantaneous_bottleneck(msp_t *self, double time, int population_id
         double strength);
 
 int msp_alloc_individual(individual_t *ind, size_t ploidy);
-int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_samples);
+int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy,
+        size_t num_samples);
 int msp_free_pedigree(msp_t *self);
-int msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array);
+int msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols,
+        int *pedigree_array);
 int msp_pedigree_load_pop(msp_t *self);
+void msp_check_samples(msp_t *self);
 int msp_pedigree_build_ind_queue(msp_t *self);
 int msp_pedigree_push_ind(msp_t *self, individual_t *ind);
 int msp_pedigree_pop_ind(msp_t *self, individual_t **ind);
@@ -379,6 +382,7 @@ int msp_pedigree_add_individual_segment(msp_t *self, individual_t *ind,
         segment_t *segment, size_t parent_ix);
 int msp_pedigree_climb(msp_t *self);
 void msp_print_pedigree_inds(msp_t *self);
+void msp_print_individual(msp_t *self, individual_t ind);
 
 int msp_initialise(msp_t *self);
 int msp_run(msp_t *self, double max_time, unsigned long max_events);
