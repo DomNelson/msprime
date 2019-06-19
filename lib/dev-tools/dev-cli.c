@@ -483,7 +483,6 @@ read_pedigree(msp_t *msp, config_t *config)
             num_samples += ped_array[j];
         }
     }
-    printf("%ld samples\n", num_samples);
     assert(num_samples > 0);
     ret = msp_alloc_pedigree(msp, num_inds, ploidy, num_samples);
     if (ret != 0) {

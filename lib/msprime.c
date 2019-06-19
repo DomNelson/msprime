@@ -726,9 +726,6 @@ msp_verify_segments(msp_t *self)
     total_avl_nodes = msp_get_num_ancestors(self)
             + avl_count(&self->breakpoints)
             + avl_count(&self->overlap_counts);
-    printf("total_avl_nodes: %ld\n", total_avl_nodes);
-    printf("allocated avl_nodes: %ld\n", object_heap_get_num_allocated(
-                &self->avl_node_heap));
     assert(total_avl_nodes == object_heap_get_num_allocated(
                 &self->avl_node_heap));
     assert(total_avl_nodes - msp_get_num_ancestors(self)
@@ -1433,8 +1430,7 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
         ind++;
     }
     assert(sample_num == self->pedigree->num_samples);
-
-    msp_print_pedigree_inds(self);
+    /* msp_print_pedigree_inds(self); */
 
     ret = 0;
 out:
@@ -1451,7 +1447,6 @@ msp_check_samples(msp_t *self)
     for (i = 0; i < self->pedigree->num_samples; i++) {
         sample = self->pedigree->samples[i];
         for (j = 0; j < self->pedigree->ploidy; j++) {
-            printf("%d\n", avl_count(&sample->segments[j]));
             assert(avl_count(&sample->segments[j]) == 1);
         }
     }
@@ -1480,10 +1475,8 @@ msp_pedigree_load_pop(msp_t *self)
     /* for (a = pop->ancestors[label].head; a != NULL; a = a->next) { */
         node = pop->ancestors[label].head;
         sample_ix = i / ploidy; // Is this well-defined?
-        printf("sample_ix: %ld", sample_ix);
         sample_ind = self->pedigree->samples[sample_ix];
         parent_ix = i % ploidy;
-        printf(" parent_ix: %ld\n", parent_ix);
         segment = node->item;
         avl_unlink_node(&pop->ancestors[label], node);
         msp_free_avl_node(self, node);
@@ -2959,15 +2952,13 @@ msp_pedigree_climb(msp_t *self)
     assert(self->num_populations == 1);
     assert(avl_count(&self->pedigree->ind_heap) > 0);
 
-    printf("Climbing through pedigree...\n");
-
     self->pedigree->is_climbing = true;
     while (avl_count(&self->pedigree->ind_heap) > 0) {
         ret = msp_pedigree_pop_ind(self, &ind);
         if (ret != 0) {
             goto out;
         }
-        msp_print_individual(self, *ind);
+        /* msp_print_individual(self, *ind); */
         self->time = ind->time;
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
@@ -2982,14 +2973,11 @@ msp_pedigree_climb(msp_t *self)
 
             /* Merge segments inherited from this ind and recombine */
             // TODO: Make sure population gets properly set when more than one
-            printf("Merging %d segments from parent %ld\n",
-                    avl_count(segments), i);
             ret = msp_merge_ancestors(self, segments, 0, 0);
             if (ret != 0) {
                 goto out;
             }
             assert(avl_count(segments) == 0);
-            printf("Merged\n");
             merged_segment = self->pedigree->merged_segment;
             self->pedigree->merged_segment = NULL;
             assert(merged_segment->prev == NULL);
@@ -2997,7 +2985,6 @@ msp_pedigree_climb(msp_t *self)
             /* If parent is NULL, we are at a pedigree founder and we add the
              * lineage back to its original population */
             if (parent == NULL) {
-                printf("Inserting ind back into population\n");
                 ret = msp_insert_individual(self, merged_segment);
                 if (ret != 0) {
                     goto out;
@@ -3007,7 +2994,6 @@ msp_pedigree_climb(msp_t *self)
             assert(merged_segment->prev == NULL);
 
             /* Recombine and climb to segments to the parents */
-            printf("Recombining...");
             if (self->recombination_rate > 0) {
                 ret = msp_dtwf_recombine(self, merged_segment, &u[0], &u[1]);
                 if (ret != 0) {
@@ -3019,14 +3005,10 @@ msp_pedigree_climb(msp_t *self)
                 u[1] = NULL;
                 u[ix] = merged_segment;
             }
-            printf(" Done\n");
             for (j = 0; j < self->pedigree->ploidy; j++) {
-                printf("Recombined lineage %ld:", j);
                 if (u[j] == NULL) {
-                    printf(" NULL\n");
                     continue;
                 }
-                printf(" Not NULL\n");
                 /* assert(u[j]->prev == NULL); */
                 ret = msp_pedigree_add_individual_segment(self, parent, u[j], j);
                 if (ret != 0) {
@@ -3043,11 +3025,7 @@ msp_pedigree_climb(msp_t *self)
         ind->merged = true;
     }
     self->pedigree->is_climbing = false;
-
-    printf("Climbing complete\n");
-    printf("Verifying... ");
     msp_verify(self);
-    printf("Done\n");
 
     ret = 0;
 out:
@@ -3666,17 +3644,14 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
     }
     if (self->model.type == MSP_MODEL_DTWF) {
         if (self->pedigree != NULL) {
-            printf("Loading segments into pop\n");
             ret = msp_pedigree_load_pop(self);
             if (ret != 0) {
                 goto out;
             }
-            printf("Building ind queue\n");
             ret = msp_pedigree_build_ind_queue(self);
             if (ret != 0) {
                 goto out;
             }
-            printf("Done\n");
             ret = msp_pedigree_climb(self);
             if (ret != 0) {
                 goto out;
