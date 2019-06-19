@@ -2368,7 +2368,7 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 {
     int ret = -1;
     int i;
-    int ndim, num_bytes;
+    int ndim;
     npy_intp *shape;
     npy_intp size;
     int num_inds, ploidy;
@@ -2379,7 +2379,6 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 
     ndim = PyArray_NDIM(arr);
     shape = PyArray_SHAPE(arr);
-    num_bytes = PyArray_NBYTES(arr);
     size = PyArray_SIZE(arr);
     if (size == 0) {
         // Means `arr` is not ndarray
@@ -2388,31 +2387,19 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 
     assert(ndim == 2);
     num_inds = shape[0];
-    ploidy = shape[1] - 1; // First column is ind ID, rest are parents.
+    ploidy = shape[1] - 3; // First column is ind ID, rest are parents.
 
-    for (i = 0; i < ndim; i++) {
-        printf("%ld\n", shape[i]);
-    }
-    printf("%d bytes\n", num_bytes);
-
-    printf("size: %ld\n", size);
     ped_array = malloc(size * sizeof(int));
-    printf("Loading pedigree\n");
-
-    iterator = NpyIter_New(arr, NPY_ITER_READONLY,
-                                NPY_CORDER, NPY_NO_CASTING, NULL);
+    iterator = NpyIter_New(arr, NPY_ITER_READONLY, NPY_CORDER, NPY_NO_CASTING, NULL);
     iternext = NpyIter_GetIterNext(iterator, NULL);
     /* The location of the data pointer which the iterator may update */
     dataptr = NpyIter_GetDataPtrArray(iterator);
 
     i = 0;
     do {
-        printf("i = %d, value %d\n", i, (int) **dataptr);
         ped_array[i] = (int) **dataptr;
         i++;
     } while (iternext(iterator));
-
-    printf("Loaded\n");
 
     size_t num_samples = 2;
     if (msp_alloc_pedigree(self->sim, num_inds, ploidy, num_samples) != 0) {
