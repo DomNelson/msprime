@@ -2377,19 +2377,28 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
     NpyIter_IterNextFunc *iternext;
     char** dataptr;
 
-    ndim = PyArray_NDIM(arr);
-    shape = PyArray_SHAPE(arr);
+    printf("Getting pedigree parameters\n");
+
     size = PyArray_SIZE(arr);
     if (size == 0) {
+        printf("Empty array\n");
         // Means `arr` is not ndarray
         goto out;
     }
+    printf("Read size\n");
+    ndim = PyArray_NDIM(arr);
+    shape = PyArray_SHAPE(arr);
+    printf("Done\n");
 
     assert(ndim == 2);
     num_inds = shape[0];
     ploidy = shape[1] - 3; // First column is ind ID, rest are parents.
 
     ped_array = malloc(size * sizeof(int));
+    if (ped_array == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
     iterator = NpyIter_New(arr, NPY_ITER_READONLY, NPY_CORDER, NPY_NO_CASTING, NULL);
     iternext = NpyIter_GetIterNext(iterator, NULL);
     /* The location of the data pointer which the iterator may update */
@@ -2401,15 +2410,19 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
         i++;
     } while (iternext(iterator));
 
+    printf("Allocating pedigree\n");
     size_t num_samples = 2;
     if (msp_alloc_pedigree(self->sim, num_inds, ploidy, num_samples) != 0) {
         goto out;
     }
+    printf("Allocated pedigree\n");
     if (msp_set_pedigree(self->sim, shape[0], shape[1], ped_array) != 0) {
         goto out;
     }
+    printf("Set pedigree\n");
 
     ret = 0;
+    printf("Done parsing pedigree\n");
 out:
     free(ped_array);
     return ret;
@@ -2940,6 +2953,8 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
     int store_full_arg = 0;
     double start_time = -1;
 
+    printf("Initializing simulator\n");
+
     self->sim = NULL;
     self->random_generator = NULL;
     self->recombination_map = NULL;
@@ -3035,13 +3050,17 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
         goto out;
     }
 
-    if (pedigree != NULL) {
+    printf("Parsing pedigree\n");
+
+    if (PyArray_SIZE(pedigree) > 0) {
         if (Simulator_parse_pedigree(self, pedigree) != 0) {
             goto out;
         }
     } else {
         printf("No pedigree\n");
     }
+
+    printf("Done\n");
 
     if (population_configuration != NULL) {
         if (Simulator_parse_population_configuration(self, population_configuration) != 0) {

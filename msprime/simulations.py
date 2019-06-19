@@ -683,6 +683,7 @@ class Simulator(object):
             self.ll_tables.fromdict(self.from_ts.tables.asdict())
         start_time = -1 if self.start_time is None else self.start_time
         pedigree = np.array([]) if self.pedigree is None else self.pedigree
+        print("Creating ll_sim")
         ll_sim = _msprime.Simulator(
             samples=self.samples,
             recombination_map=ll_recomb_map,
@@ -700,6 +701,7 @@ class Simulator(object):
             segment_block_size=self.segment_block_size,
             avl_node_block_size=self.avl_node_block_size,
             node_mapping_block_size=self.node_mapping_block_size)
+        print("Done")
         return ll_sim
 
     def run(self, end_time=None):
