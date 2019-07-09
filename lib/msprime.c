@@ -744,8 +744,8 @@ msp_verify_overlaps(msp_t *self)
     avl_node_t *node;
     node_mapping_t *nm;
     segment_t *u;
-    double generations;
     uint32_t j, k, left, right, count, label;
+    size_t remaining_samples = self->num_sampling_events - self->next_sampling_event;
     /* We check for every locus, so obviously this rules out large numbers
      * of loci. This code should never be called except during testing,
      * so we don't need to recover from malloc failure.
@@ -756,13 +756,8 @@ msp_verify_overlaps(msp_t *self)
     /* Add in the counts for any historical samples that haven't been
      * included yet.
      */
-    generations = self->model.model_time_to_generations(&self->model, self->time);
-    for (j = 0; j < self->num_samples; j++) {
-        if (self->samples[j].time > generations) {
-            for (k = 0; k < self->num_loci; k++) {
-                overlaps[k]++;
-            }
-        }
+    for (k = 0; k < self->num_loci; k++) {
+        overlaps[k] += (uint32_t) remaining_samples;
     }
     for (label = 0; label < self->num_labels; label++) {
         for (j = 0; j < self->num_populations; j++) {
@@ -778,8 +773,7 @@ msp_verify_overlaps(msp_t *self)
             }
         }
     }
-    for (node = self->overlap_counts.head; node->next != NULL;
-            node = node->next) {
+    for (node = self->overlap_counts.head; node->next != NULL; node = node->next) {
         nm = (node_mapping_t *) node->item;
         left = nm->left;
         right = ((node_mapping_t *) node->next->item)->left;
@@ -3012,8 +3006,7 @@ msp_run_coalescent(msp_t *self, double max_time, unsigned long max_events)
 
         sampling_event_time = DBL_MAX;
         if (self->next_sampling_event < self->num_sampling_events) {
-            sampling_event_time = self->sampling_events[
-                self->next_sampling_event].time;
+            sampling_event_time = self->sampling_events[self->next_sampling_event].time;
         }
         demographic_event_time = DBL_MAX;
         if (self->next_demographic_event != NULL) {
@@ -3031,11 +3024,17 @@ msp_run_coalescent(msp_t *self, double max_time, unsigned long max_events)
                 break;
             }
             self->time = se->time;
-            ret = msp_insert_sample(self, se->sample, se->population_id);
-            if (ret != 0) {
-                goto out;
+            /* Add in all samples with this time */
+            while (self->next_sampling_event < self->num_sampling_events &&
+                    self->sampling_events[self->next_sampling_event].time
+                        == sampling_event_time) {
+                se = self->sampling_events + self->next_sampling_event;
+                ret = msp_insert_sample(self, se->sample, se->population_id);
+                if (ret != 0) {
+                    goto out;
+                }
+                self->next_sampling_event++;
             }
-            self->next_sampling_event++;
         } else if (demographic_event_time < t_temp) {
             if (demographic_event_time >= max_time) {
                 ret = MSP_EXIT_MAX_TIME;
