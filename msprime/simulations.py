@@ -658,19 +658,25 @@ class Simulator(object):
         # Column labels:
         # ID, father, mother, time, is_sample
         sorted_ped_array = np.zeros((ninds, 5), dtype=np.int32)
+        is_sample_array = np.ones((ninds), dtype=np.int32)
         ind_dict = dict(zip(ped_array[:, 0], range(ninds)))
 
         for i in range(ninds):
-            ind, father, mother, time, is_sample = ped_array[i]
+            ind, father, mother, time = ped_array[i]
 
             father_ix = -1
             mother_ix = -1
             if father != 0:
                 father_ix = ind_dict[father]
+                is_sample_array[father_ix] = 0
             if mother != 0:
                 mother_ix = ind_dict[mother]
+                is_sample_array[mother_ix] = 0
 
-            sorted_ped_array[i] = [ind, father_ix, mother_ix, time, is_sample]
+            # Sample flag (5th col) set below
+            sorted_ped_array[i][:4] = [ind, father_ix, mother_ix, time]
+
+        sorted_ped_array[:, 4] = is_sample_array
 
         self.pedigree = sorted_ped_array
 
