@@ -1467,7 +1467,15 @@ msp_pedigree_load_pop(msp_t *self)
 
     pop = &self->populations[0];
     ploidy = self->pedigree->ploidy;
-    assert(avl_count(&pop->ancestors[label]) == self->pedigree->num_samples * ploidy);
+    if (avl_count(&pop->ancestors[label]) != self->pedigree->num_samples * ploidy) {
+        printf("** Number of sample lineages (%u) must equal number of proband lineages in the pedigree (%lu)!"
+                " (ploidy = %lu lineages per individual) **\n",
+                avl_count(&pop->ancestors[label]),
+                self->pedigree->num_samples * ploidy,
+                ploidy);
+        ret = -1;
+        goto out;
+    }
 
     // Move segments from population into pedigree samples
     i = 0;

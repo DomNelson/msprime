@@ -284,6 +284,9 @@ def simulator_factory(
     if population_configurations is not None:
         sim.set_population_configurations(population_configurations)
     if pedigree is not None:
+        print("Setting pedigree from simulator_factory")
+        if sim.model.name != "dtwf":
+            raise ValueError("Pedigree can only be specified for DTWF model")
         sim.set_pedigree(pedigree)
     if migration_matrix is not None:
         sim.set_migration_matrix(migration_matrix)
@@ -642,7 +645,34 @@ class Simulator(object):
         self.migration_matrix = [[0 for j in range(N)] for k in range(N)]
 
     def set_pedigree(self, pedigree):
-        self.pedigree = pedigree
+        if isinstance(pedigree, str):
+            ped_array = self.load_pedigree(os.path.expanduser(pedigree))
+        elif isinstance(pedigree, np.ndarray):
+            ped_array = pedigree
+        else:
+            raise ValueError("Pedigree must be filename or numpy array.")
+
+        print("Setting pedigree as int32")
+        ped_array = ped_array.astype("int32")  # Is cast necessary?
+        ninds = ped_array.shape[0]
+        # Column labels:
+        # ID, father, mother, time, is_sample
+        sorted_ped_array = np.zeros((ninds, 5), dtype=np.int32)
+        ind_dict = dict(zip(ped_array[:, 0], range(ninds)))
+
+        for i in range(ninds):
+            ind, father, mother, time, is_sample = ped_array[i]
+
+            father_ix = -1
+            mother_ix = -1
+            if father != 0:
+                father_ix = ind_dict[father]
+            if mother != 0:
+                mother_ix = ind_dict[mother]
+
+            sorted_ped_array[i] = [ind, father_ix, mother_ix, time, is_sample]
+
+        self.pedigree = sorted_ped_array
 
     def set_demographic_events(self, demographic_events):
         err = (
