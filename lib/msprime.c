@@ -2471,6 +2471,9 @@ msp_run_coalescent(msp_t *self, double max_time, unsigned long max_events)
         if (ret != 0) {
             goto out;
         }
+        printf("%f\t%lu\n",
+                self->model.model_time_to_generations(&self->model, self->time),
+                msp_get_num_ancestors(self));
         /* Recombination */
         lambda = (double) num_links * self->recombination_rate;
         re_t_wait = DBL_MAX;
@@ -2619,6 +2622,8 @@ msp_dtwf_generation(msp_t *self)
     if (ret != 0) {
         goto out;
     }
+
+    printf("%f\t%lu\n", self->time, msp_get_num_ancestors(self));
 
     for (j = 0; j < self->num_populations; j++) {
 
