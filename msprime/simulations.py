@@ -1387,8 +1387,8 @@ class MassMigration(DemographicEvent):
     A mass migration event in which some fraction of the population in
     one deme simultaneously move to another deme, viewed backwards in
     time. Each lineage currently present in the source population
-    moves to the destination population with probability equal to
-    ``proportion``.
+    moves to the destination population (backwards in time) with
+    probability equal to ``proportion``.
 
     This event class generalises the population split (``-ej``) and
     admixture (``-es``) events from ``ms``. Note that MassMigrations
@@ -1422,9 +1422,13 @@ class MassMigration(DemographicEvent):
 
     def __str__(self):
         return (
-            "Mass migration: lineages move from {} to {} with "
-            "probability {}".format(
-                self.source, self.dest, self.proportion))
+            "Mass migration: "
+            "Lineages moved with probability {} backwards in time with "
+            "source {} & dest {}"
+            "\n                     "
+            "(equivalent to migration from {} to {} forwards in time)".format(
+                self.proportion, self.source, self.dest,
+                self.dest, self.source))
 
 
 class SimulationModelChange(DemographicEvent):
