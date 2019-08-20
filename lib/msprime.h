@@ -50,6 +50,7 @@
 #define MSP_NODE_IS_RE_EVENT    (1u << 17)
 #define MSP_NODE_IS_CA_EVENT    (1u << 18)
 #define MSP_NODE_IS_MIG_EVENT   (1u << 19)
+#define MSP_NODE_IS_CEN_EVENT   (1u << 20)
 
 /* Alphabets for mutation generator */
 #define MSP_ALPHABET_BINARY     0
@@ -372,6 +373,7 @@ int msp_add_simple_bottleneck(msp_t *self, double time, int population_id,
         double intensity);
 int msp_add_instantaneous_bottleneck(msp_t *self, double time, int population_id,
         double strength);
+int msp_add_census_event(msp_t *self, double time);
 
 int msp_alloc_individual(individual_t *ind, size_t ploidy);
 int msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy,
