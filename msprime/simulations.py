@@ -646,39 +646,42 @@ class Simulator(object):
 
     def set_pedigree(self, pedigree):
         if isinstance(pedigree, str):
-            ped_array = self.load_pedigree(os.path.expanduser(pedigree))
+            P = Pedigree(pedigree, num_samples=len(self.samples) // 2)
+            P.build_ll_array()
+            self.pedigree = P.ll_ped_array
         elif isinstance(pedigree, np.ndarray):
-            ped_array = pedigree
+            print("Setting pedigree as int32")
+            self.pedigree = pedigree.astype("int32") # Is cast necessary?
         else:
             raise ValueError("Pedigree must be filename or numpy array.")
 
-        print("Setting pedigree as int32")
-        ped_array = ped_array.astype("int32")  # Is cast necessary?
-        ninds = ped_array.shape[0]
-        # Column labels:
-        # ID, father, mother, time, is_sample
-        sorted_ped_array = np.zeros((ninds, 5), dtype=np.int32)
-        is_sample_array = np.ones((ninds), dtype=np.int32)
-        ind_dict = dict(zip(ped_array[:, 0], range(ninds)))
-
-        for i in range(ninds):
-            ind, father, mother, time = ped_array[i]
-
-            father_ix = -1
-            mother_ix = -1
-            if father != 0:
-                father_ix = ind_dict[father]
-                is_sample_array[father_ix] = 0
-            if mother != 0:
-                mother_ix = ind_dict[mother]
-                is_sample_array[mother_ix] = 0
-
-            # Sample flag (5th col) set below
-            sorted_ped_array[i][:4] = [ind, father_ix, mother_ix, time]
-
-        sorted_ped_array[:, 4] = is_sample_array
-
-        self.pedigree = sorted_ped_array
+        # print("Setting pedigree as int32")
+        # ped_array = ped_array.astype("int32")  # Is cast necessary?
+        # ninds = ped_array.shape[0]
+        # # Column labels:
+        # # ID, father, mother, time, is_sample
+        # sorted_ped_array = np.zeros((ninds, 5), dtype=np.int32)
+        # is_sample_array = np.ones((ninds), dtype=np.int32)
+        # ind_dict = dict(zip(ped_array[:, 0], range(ninds)))
+        #
+        # for i in range(ninds):
+        #     ind, father, mother, time = ped_array[i]
+        #
+        #     father_ix = -1
+        #     mother_ix = -1
+        #     if father != 0:
+        #         father_ix = ind_dict[father]
+        #         is_sample_array[father_ix] = 0
+        #     if mother != 0:
+        #         mother_ix = ind_dict[mother]
+        #         is_sample_array[mother_ix] = 0
+        #
+        #     # Sample flag (5th col) set below
+        #     sorted_ped_array[i][:4] = [ind, father_ix, mother_ix, time]
+        #
+        # sorted_ped_array[:, 4] = is_sample_array
+        #
+        # self.pedigree = sorted_ped_array
 
     def set_demographic_events(self, demographic_events):
         err = (
@@ -979,6 +982,186 @@ class PopulationConfiguration(object):
             "initial_size": self.initial_size,
             "growth_rate": self.growth_rate
         }
+
+
+class Pedigree(object):
+    """
+    Python class for loading pedigree into numpy for export to C library
+    """
+    def __init__(self, pedfile, num_samples=None, samples=None, ploidy=2,
+                cols=None):
+        assert(num_samples is not None or sample_IDs is not None)
+        self.pedfile = pedfile
+        self.ploidy = ploidy
+
+        self.inds = None
+        self.parents = None
+        self.times = None
+        self.is_sample = None
+
+        self.ll_ped_array = None
+        self.num_children = None
+
+        self.samples = samples
+        self.num_samples = num_samples
+        self.ninds = 0
+        self.ind_to_index_dict = None
+
+        self.cols = {
+            "inds": 0,
+            "parents": [1, 2],
+            "time": None,
+            "sex": None,
+            "is_sample": None}
+        if cols is not None:
+            self.cols = cols
+        assert(len(self.cols["parents"]) == ploidy)
+
+        if pedfile is not None:
+            self.load(self.pedfile)
+
+            if self.is_sample is None:
+                self.set_samples()
+            if self.times is None:
+                self.assign_times()
+
+    def load(self, pedfile):
+        usecols = []
+        for c in self.cols.values():
+            if isinstance(c, collections.Iterable):
+                usecols.extend(c)
+            elif c is not None:
+                usecols.append(c)
+        usecols = sorted(usecols)
+
+        data = np.genfromtxt(pedfile, skip_header=1, usecols=usecols,
+                                dtype=int)
+        self.inds = data[:, self.cols["inds"]]
+        self.parents = data[:, self.cols["parents"]]
+        if self.cols["time"] is not None:
+            self.times = data[:, self.cols["time"]]
+        if self.cols["is_sample"] is not None:
+            self.is_sample = data[:, self.cols["is_sample"]]
+
+        self.ninds = len(self.inds)
+        self.ind_to_index_dict = dict(zip(self.inds, range(self.ninds)))
+        # Add special case for 0, which indicates an unknown individual
+        assert 0 not in self.ind_to_index_dict
+        self.ind_to_index_dict[0] = -1
+
+    def set_samples(self, probands_only=True):
+        if self.is_sample is not None:
+            print("Samples already set.")
+            return
+
+        self.is_sample = np.zeros((self.ninds), dtype=int)
+        if (self.num_samples is not None and self.samples is not None):
+            raise ValueError("Cannot specify both samples and num_samples.")
+
+        probands = set(self.inds).difference(self.parents.ravel())
+
+        if self.num_samples is not None:
+            assert self.num_samples >= 2
+            self.samples = np.random.choice(
+                list(probands), size=self.num_samples, replace=False)
+
+        assert(self.samples is not None)
+        for s in self.samples:
+            s_idx = self.ind_to_index_dict[s]
+            if probands_only is True:
+                assert(s in probands)
+            self.is_sample[s_idx] = 1
+
+    def get_ind_time(self, ind=None, ind_idx=None):
+        if ind is not None:
+            assert ind_idx is None
+            ind_idx = self.ind_to_index_dict[ind]
+
+        return self.times[ind_idx]
+
+    def set_ind_time(self, time, ind=None, ind_idx=None):
+        if ind is not None:
+            assert ind_idx is None
+            ind_idx = self.ind_to_index_dict[ind]
+
+        self.times[ind_idx] = time
+
+    def get_ind_parents(self, ind=None, ind_idx=None):
+        if ind is not None:
+            assert ind_idx is None
+            ind_idx = self.ind_to_index_dict[ind]
+
+        parents = []
+        for p in self.parents[ind_idx]:
+            if p == 0:
+                parents.append(None)
+            else:
+                parents.append(p)
+
+        return parents
+
+    def assign_times(self, check=False):
+        """
+        For pedigrees without specified times, crudely assigns times to
+        all individuals.
+        """
+        if self.times is not None:
+            print("Times already assigned.")
+            if check is True:
+                self.check_times()
+            return
+
+        self.times = np.zeros((self.ninds), dtype=int)
+        assert len(self.samples) > 0
+
+        climbers = [s for s in self.samples]
+        t = 0
+        while len(climbers) > 0:
+            next_climbers = []
+            for climber in climbers:
+                if self.get_ind_time(climber) < t:
+                    self.set_ind_time(t, climber)
+                for parent in self.get_ind_parents(climber):
+                    if parent is not None:
+                        next_climbers.append(parent)
+            climbers = next_climbers
+            t += 1
+
+        if check is True:
+            self.check_times()
+
+    def check_times(self):
+        for ind in self.samples:
+            for parent in self.get_ind_parents(ind):
+                if parent is not None:
+                    t1 = self.get_ind_time(ind)
+                    t2 = self.get_ind_time(parent)
+                    if t1 >= t2:
+                        print("Error! Ind", ind, "time:", t1,
+				"parent", parent, "time:", t2)
+
+    def build_ll_array(self):
+        if self.ploidy != 2:
+            raise NotImplementedError("Only ploidy=2 is currently supported")
+
+        if self.ll_ped_array is not None:
+            print("Low-level pedigree array already built.")
+            return
+
+        # Cols:
+        # ind (1), parents (ploidy), time (1), is_sample (1)
+        ncols = self.ploidy + 3
+
+        # This is a bit awkward
+        self.ll_ped_array = np.zeros((self.ninds, ncols), dtype=np.int32)
+        self.ll_ped_array[:, 0] = self.inds
+        self.ll_ped_array[:, 3] = self.times
+        self.ll_ped_array[:, 4] = self.is_sample
+
+        for i in range(self.ninds):
+            father, mother = self.parents[i]
+            self.ll_ped_array[i][1] = self.ind_to_index_dict[father]
+            self.ll_ped_array[i][2] = self.ind_to_index_dict[mother]
 
 
 class DemographicEvent(object):

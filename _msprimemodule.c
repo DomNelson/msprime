@@ -2399,20 +2399,21 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
         ret = MSP_ERR_NO_MEMORY;
         goto out;
     }
-    iterator = NpyIter_New(arr, NPY_ITER_READONLY, NPY_CORDER, NPY_NO_CASTING, NULL);
+    iterator = NpyIter_New( arr, NPY_ITER_READONLY, NPY_CORDER, NPY_SAFE_CASTING,
+            NULL);
     iternext = NpyIter_GetIterNext(iterator, NULL);
     /* The location of the data pointer which the iterator may update */
     dataptr = NpyIter_GetDataPtrArray(iterator);
 
     i = 0;
     do {
-        ped_array[i] = (int) **dataptr;
+        ped_array[i] = **(int **) dataptr;
         i++;
     } while (iternext(iterator));
 
     printf("Allocating pedigree\n");
-    size_t num_samples = 2;
-    if (msp_alloc_pedigree(self->sim, num_inds, ploidy, num_samples) != 0) {
+    if (msp_alloc_pedigree(self->sim, num_inds, ploidy,
+                self->sim->num_samples / 2) != 0) {
         goto out;
     }
     printf("Allocated pedigree\n");

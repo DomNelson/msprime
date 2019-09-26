@@ -276,7 +276,7 @@ class PyPedigree(object):
         self.ind_to_index_dict[0] = -1
 
         self.ped_array = np.zeros((self.ninds, len(cols)), dtype=int)
-        self.num_children = np.zeros(self.ninds), dtype=int)
+        self.num_children = np.zeros((self.ninds), dtype=int)
         for i in range(self.ninds):
             ind, mother, father = [self.ind_to_index_dict[id] for id in data[i]]
             self.ped_array[i] = [ind, father, mother]
