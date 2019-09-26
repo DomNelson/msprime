@@ -651,7 +651,7 @@ class Simulator(object):
             self.pedigree = P.ll_ped_array
         elif isinstance(pedigree, np.ndarray):
             print("Setting pedigree as int32")
-            self.pedigree = pedigree.astype("int32") # Is cast necessary?
+            self.pedigree = pedigree.astype("int32")  # Is cast necessary?
         else:
             raise ValueError("Pedigree must be filename or numpy array.")
 
@@ -989,8 +989,8 @@ class Pedigree(object):
     Python class for loading pedigree into numpy for export to C library
     """
     def __init__(self, pedfile, num_samples=None, samples=None, ploidy=2,
-                cols=None):
-        assert(num_samples is not None or sample_IDs is not None)
+                 cols=None):
+        assert(num_samples is not None or samples is not None)
         self.pedfile = pedfile
         self.ploidy = ploidy
 
@@ -1035,7 +1035,7 @@ class Pedigree(object):
         usecols = sorted(usecols)
 
         data = np.genfromtxt(pedfile, skip_header=1, usecols=usecols,
-                                dtype=int)
+                             dtype=int)
         self.inds = data[:, self.cols["inds"]]
         self.parents = data[:, self.cols["parents"]]
         if self.cols["time"] is not None:
@@ -1138,7 +1138,7 @@ class Pedigree(object):
                     t2 = self.get_ind_time(parent)
                     if t1 >= t2:
                         print("Error! Ind", ind, "time:", t1,
-				"parent", parent, "time:", t2)
+                              "parent", parent, "time:", t2)
 
     def build_ll_array(self):
         if self.ploidy != 2:
