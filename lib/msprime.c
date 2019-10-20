@@ -1465,16 +1465,17 @@ msp_pedigree_load_pop(msp_t *self)
     label_id_t label = 0;
 
     assert(self->num_populations == 1); // Only support single pop for now
+    assert(self->pedigree->ploidy > 0);
 
     pop = &self->populations[0];
     ploidy = self->pedigree->ploidy;
     if (avl_count(&pop->ancestors[label]) != self->pedigree->num_samples * ploidy) {
-        printf("** Number of sample lineages (%u) must equal number of proband lineages in the pedigree (%lu)!"
-                " (ploidy = %lu lineages per individual) **\n",
-                avl_count(&pop->ancestors[label]),
-                self->pedigree->num_samples * ploidy,
-                ploidy);
-        ret = -1;
+        /* printf("** Number of sample lineages (%u) must equal number of proband lineages in the pedigree (%lu)!" */
+        /*         " (ploidy = %lu lineages per individual) **\n", */
+        printf("specified lineages: %u\n", avl_count(&pop->ancestors[label]));
+        printf("pedigree lineages: %lu\n", self->pedigree->num_samples * ploidy);
+                /* ploidy); */
+        ret = MSP_ERR_BAD_PEDIGREE_NUM_SAMPLES;
         goto out;
     }
 
@@ -3639,6 +3640,7 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
     int err;
     simulation_model_t *model = &self->model;
     double scaled_time = model->generations_to_model_time(model, max_time);
+    printf("Running...\n");
 
     if (self->state == MSP_STATE_INITIALISED) {
         self->state = MSP_STATE_SIMULATING;
@@ -3656,10 +3658,12 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
     }
     if (self->model.type == MSP_MODEL_DTWF) {
         if (self->pedigree != NULL) {
+            printf("Pedigree detected - climbing\n");
             ret = msp_pedigree_load_pop(self);
             if (ret != 0) {
                 goto out;
             }
+            printf("Pedigree loaded\n");
             ret = msp_pedigree_build_ind_queue(self);
             if (ret != 0) {
                 goto out;
@@ -3670,7 +3674,10 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
                 goto out;
             }
             printf("Climbing complete\n");
+        } else {
+            printf("DTWF - no pedigree detected\n");
         }
+        printf("Running DTWF\n");
         ret = msp_run_dtwf(self, scaled_time, max_events);
     } else if (self->model.type == MSP_MODEL_SWEEP) {
         /* FIXME making sweep atomic for now as it's non-renentrant */

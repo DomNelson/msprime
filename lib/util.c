@@ -156,6 +156,10 @@ msp_strerror_internal(int err)
             ret = "Bottleneck events are not supported in DTWF. They can "
                 "be implemented as population size changes.";
             break;
+        case MSP_ERR_BAD_PEDIGREE_NUM_SAMPLES:
+            ret = "The number of haploid lineages denoted by sample_size must "
+                "be divisible by ploidy (default 2)";
+            break;
 
         default:
             ret = "Error occurred generating error string. Please file a bug "
