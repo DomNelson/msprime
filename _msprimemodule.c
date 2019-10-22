@@ -2425,7 +2425,9 @@ Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
     ret = 0;
     printf("Done parsing pedigree\n");
 out:
-    free(ped_array);
+    if (ped_array != NULL) {
+        free(ped_array);
+    }
     return ret;
 }
 
@@ -3055,6 +3057,7 @@ Simulator_init(Simulator *self, PyObject *args, PyObject *kwds)
 
     if (PyArray_SIZE(pedigree) > 0) {
         if (Simulator_parse_pedigree(self, pedigree) != 0) {
+            printf("Error parsing pedigree\n");
             goto out;
         }
     } else {

@@ -287,6 +287,9 @@ def simulator_factory(
         print("Setting pedigree from simulator_factory")
         if sim.model.name != "dtwf":
             raise ValueError("Pedigree can only be specified for DTWF model")
+        # if sample_size % 2 != 0:
+        #     raise NotImplementedError("Number of lineages " +\
+        #             "({}) must be a multiple of ploidy==2".format(sample_size))
         sim.set_pedigree(pedigree)
     if migration_matrix is not None:
         sim.set_migration_matrix(migration_matrix)
@@ -646,6 +649,7 @@ class Simulator(object):
 
     def set_pedigree(self, pedigree):
         if isinstance(pedigree, str):
+            print(len(self.samples), "samples found")
             P = Pedigree(pedigree, num_samples=len(self.samples) // 2)
             P.build_ll_array()
             self.pedigree = P.ll_ped_array
@@ -753,6 +757,7 @@ class Simulator(object):
             self.ll_sim.run(event.time)
             self.ll_sim.set_model(event.model.get_ll_representation())
         end_time = sys.float_info.max if end_time is None else end_time
+        print("Running ll_sim")
         self.ll_sim.run(end_time)
         self.ll_sim.finalise_tables()
 
