@@ -1038,15 +1038,20 @@ class Pedigree(object):
             elif c is not None:
                 usecols.append(c)
         usecols = sorted(usecols)
+        print(usecols)
 
         data = np.genfromtxt(pedfile, skip_header=1, usecols=usecols,
-                             dtype=int)
-        self.inds = data[:, self.cols["inds"]]
-        self.parents = data[:, self.cols["parents"]]
+                             dtype=float)
+        self.inds = data[:, self.cols["inds"]].astype(int)
+
+        if min(self.inds) < 0:
+            raise ValueError("Individual array indices must be >= 0")
+
+        self.parents = data[:, self.cols["parents"]].astype(int)
         if self.cols["time"] is not None:
             self.times = data[:, self.cols["time"]]
         if self.cols["is_sample"] is not None:
-            self.is_sample = data[:, self.cols["is_sample"]]
+            self.is_sample = data[:, self.cols["is_sample"]].astype(int)
 
         self.ninds = len(self.inds)
         self.ind_to_index_dict = dict(zip(self.inds, range(self.ninds)))
@@ -1158,6 +1163,9 @@ class Pedigree(object):
         ncols = self.ploidy + 3
 
         # This is a bit awkward
+        if min(self.inds) < 0:
+            raise ValueError("Individual array indices must be >= 0")
+
         self.ll_ped_array = np.zeros((self.ninds, ncols), dtype=np.int32)
         self.ll_ped_array[:, 0] = self.inds
         self.ll_ped_array[:, 3] = self.times
