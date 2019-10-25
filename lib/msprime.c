@@ -1349,7 +1349,7 @@ msp_alloc_pedigree(msp_t *self, size_t num_inds, size_t ploidy, size_t num_sampl
     self->pedigree->num_inds = num_inds;
     self->pedigree->ploidy = ploidy;
     self->pedigree->num_samples = num_samples;
-    self->pedigree->is_climbing = false;
+    self->pedigree->state = MSP_PED_STATE_UNCLIMBED;
     self->pedigree->merged_segment = NULL;
 
     ret = 0;
@@ -1410,7 +1410,15 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
     sample_num = 0;
     for (i = 0; i < self->pedigree->num_inds; i++) {
         ind->id = pedigree_array[i * num_cols + ID_col];
+
+        if (ind->id <= 0) {
+            for (int k = 0; k < 5; k++) {
+                printf("%d ", pedigree_array[i * num_cols + k]);
+            }
+            printf("\n");
+        }
         assert(ind->id > 0);
+
         ind->time = pedigree_array[i * num_cols + time_col];
 
         // Link individuals to parents
@@ -2182,7 +2190,8 @@ msp_merge_ancestors(msp_t *self, avl_tree_t *Q, population_id_t population_id,
                         alpha->right - alpha->left - 1);
                 /* Pedigree don't currently track lineages in Populations,
                  * so keep reference to merged segments instead */
-                if (self->pedigree != NULL && self->pedigree->is_climbing == true) {
+                if (self->pedigree != NULL &&
+                        self->pedigree->state == MSP_PED_STATE_CLIMBING) {
                     assert(self->pedigree->merged_segment == NULL);
                     self->pedigree->merged_segment = alpha;
                 } else {
@@ -2963,13 +2972,18 @@ msp_pedigree_climb(msp_t *self)
     assert(self->num_populations == 1);
     assert(avl_count(&self->pedigree->ind_heap) > 0);
 
-    self->pedigree->is_climbing = true;
+    if (self->pedigree->state != MSP_PED_STATE_UNCLIMBED) {
+        ret = MSP_ERR_BAD_STATE;
+        goto out;
+    }
+    self->pedigree->state = MSP_PED_STATE_CLIMBING;
+
     while (avl_count(&self->pedigree->ind_heap) > 0) {
         ret = msp_pedigree_pop_ind(self, &ind);
         if (ret != 0) {
             goto out;
         }
-        msp_print_individual(self, *ind);
+        /* msp_print_individual(self, *ind); */
         self->time = ind->time;
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
@@ -3035,7 +3049,7 @@ msp_pedigree_climb(msp_t *self)
         }
         ind->merged = true;
     }
-    self->pedigree->is_climbing = false;
+    self->pedigree->state = MSP_PED_STATE_CLIMB_COMPLETE;
 
     printf("Verifying\n");
     msp_verify_segments(self);
@@ -3657,7 +3671,7 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         goto out;
     }
     if (self->model.type == MSP_MODEL_DTWF) {
-        if (self->pedigree != NULL) {
+        if (self->pedigree != NULL && self->pedigree->state == MSP_PED_STATE_UNCLIMBED) {
             printf("Pedigree detected - climbing\n");
             ret = msp_pedigree_load_pop(self);
             if (ret != 0) {
@@ -3674,7 +3688,11 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
                 goto out;
             }
             printf("Climbing complete\n");
+        } else if (self->pedigree != NULL &&
+                self->pedigree->state == MSP_PED_STATE_CLIMB_COMPLETE) {
+            printf("DTWF - pedigree already climbed\n");
         } else {
+            assert (self->pedigree == NULL);
             printf("DTWF - no pedigree detected\n");
         }
         printf("Running DTWF\n");

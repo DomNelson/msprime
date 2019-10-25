@@ -57,6 +57,11 @@
 /* Flags for mutgen */
 #define MSP_KEEP_SITES  1
 
+/* Pedigree states */
+#define MSP_PED_STATE_UNCLIMBED         0
+#define MSP_PED_STATE_CLIMBING          1
+#define MSP_PED_STATE_CLIMB_COMPLETE    2
+
 /* FIXME: Using these typedefs to keep the diff size small on the initial
  * tskit transition. Can remove later. */
 typedef tsk_id_t population_id_t;
@@ -121,7 +126,7 @@ typedef struct {
     individual_t **samples;
     size_t num_samples;
     avl_tree_t ind_heap;
-    bool is_climbing;
+    int state;
     // Stores the most recently merged segment.
     segment_t *merged_segment;
 } pedigree_t;
