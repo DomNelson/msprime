@@ -1384,6 +1384,9 @@ msp_free_pedigree(msp_t *self)
 int MSP_WARN_UNUSED
 msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_array)
 {
+    // TODO: Simpler to pass separate arrays for IDs, parents, sex, etc.?
+    //       Would mean column specification would be entirely handled in
+    //       Python.
     int ret;
     size_t i, j;
     size_t ID_col, first_parent_col, time_col, sample_flag_col;
@@ -3670,6 +3673,7 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         ret = MSP_ERR_UNSUPPORTED_OPERATION;
         goto out;
     }
+    printf("Time: %f\n", self->time);
     if (self->model.type == MSP_MODEL_DTWF) {
         if (self->pedigree != NULL && self->pedigree->state == MSP_PED_STATE_UNCLIMBED) {
             printf("Pedigree detected - climbing\n");

@@ -28,6 +28,7 @@ import sys
 import os
 import warnings
 import copy
+import time
 
 import tskit
 import numpy as np
@@ -204,10 +205,17 @@ def simulator_factory(
                 "Cannot specify sample size and population_configurations "
                 "simultaneously.")
         s = Sample(population=0, time=0.0)
+        # In pedigrees samples are diploid individuals
+        if pedigree is not None:
+            sample_size *= 2
         the_samples = [s for _ in range(sample_size)]
     # If we have population configurations we may have embedded sample_size
     # values telling us how many samples to take from each population.
     if population_configurations is not None:
+        if pedigree is not None:
+            raise NotImplementedError(
+                    "Cannot yet specify population configurations "
+                    "and pedigrees simultaneously")
         _check_population_configurations(population_configurations)
         if samples is None:
             the_samples = []
@@ -285,11 +293,9 @@ def simulator_factory(
         sim.set_population_configurations(population_configurations)
     if pedigree is not None:
         print("Setting pedigree from simulator_factory")
-        if sim.model.name != "dtwf":
-            raise ValueError("Pedigree can only be specified for DTWF model")
-        # if sample_size % 2 != 0:
-        #     raise NotImplementedError("Number of lineages " +\
-        #             "({}) must be a multiple of ploidy==2".format(sample_size))
+        if sim.model.name.lower() != "dtwf":
+            raise NotImplementedError(
+                    "Pedigree can only be specified for DTWF model")
         sim.set_pedigree(pedigree)
     if migration_matrix is not None:
         sim.set_migration_matrix(migration_matrix)
@@ -649,7 +655,10 @@ class Simulator(object):
 
     def set_pedigree(self, pedigree):
         if isinstance(pedigree, str):
-            print(len(self.samples), "samples found")
+            if len(self.samples) % 2 != 0:
+                raise ValueError(
+                        "In (diploid) pedigrees, must specify two "
+                        "lineages per individual.")
             P = Pedigree(pedigree, num_samples=len(self.samples) // 2)
             P.build_ll_array()
             self.pedigree = P.ll_ped_array
@@ -658,34 +667,6 @@ class Simulator(object):
             self.pedigree = pedigree.astype("int32")  # Is cast necessary?
         else:
             raise ValueError("Pedigree must be filename or numpy array.")
-
-        # print("Setting pedigree as int32")
-        # ped_array = ped_array.astype("int32")  # Is cast necessary?
-        # ninds = ped_array.shape[0]
-        # # Column labels:
-        # # ID, father, mother, time, is_sample
-        # sorted_ped_array = np.zeros((ninds, 5), dtype=np.int32)
-        # is_sample_array = np.ones((ninds), dtype=np.int32)
-        # ind_dict = dict(zip(ped_array[:, 0], range(ninds)))
-        #
-        # for i in range(ninds):
-        #     ind, father, mother, time = ped_array[i]
-        #
-        #     father_ix = -1
-        #     mother_ix = -1
-        #     if father != 0:
-        #         father_ix = ind_dict[father]
-        #         is_sample_array[father_ix] = 0
-        #     if mother != 0:
-        #         mother_ix = ind_dict[mother]
-        #         is_sample_array[mother_ix] = 0
-        #
-        #     # Sample flag (5th col) set below
-        #     sorted_ped_array[i][:4] = [ind, father_ix, mother_ix, time]
-        #
-        # sorted_ped_array[:, 4] = is_sample_array
-        #
-        # self.pedigree = sorted_ped_array
 
     def set_demographic_events(self, demographic_events):
         err = (
@@ -758,8 +739,10 @@ class Simulator(object):
             self.ll_sim.set_model(event.model.get_ll_representation())
         end_time = sys.float_info.max if end_time is None else end_time
         print("Running ll_sim")
+        start_time = time.time()
         self.ll_sim.run(end_time)
         self.ll_sim.finalise_tables()
+        print("Finished running ll_sim in", time.time() - start_time, "seconds")
 
     def get_tree_sequence(self, mutation_generator=None, provenance_record=None):
         """
