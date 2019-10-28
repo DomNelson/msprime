@@ -1403,7 +1403,7 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
         goto out;
     }
 
-    // Feels like a messy way of specifying pedigree format...
+    // Feels like a messy way of specifying pedigree format... see above
     ID_col = 0;
     first_parent_col = 1;
     time_col = first_parent_col + self->pedigree->ploidy;
@@ -1415,12 +1415,10 @@ msp_set_pedigree(msp_t *self, size_t num_rows, size_t num_cols, int *pedigree_ar
         ind->id = pedigree_array[i * num_cols + ID_col];
 
         if (ind->id <= 0) {
-            for (int k = 0; k < 5; k++) {
-                printf("%d ", pedigree_array[i * num_cols + k]);
-            }
-            printf("\n");
+            printf("Individual ID: %d\n", ind->id);
+            ret = MSP_ERR_BAD_PEDIGREE_ID;
+            goto out;
         }
-        assert(ind->id > 0);
 
         ind->time = pedigree_array[i * num_cols + time_col];
 
@@ -1481,11 +1479,8 @@ msp_pedigree_load_pop(msp_t *self)
     pop = &self->populations[0];
     ploidy = self->pedigree->ploidy;
     if (avl_count(&pop->ancestors[label]) != self->pedigree->num_samples * ploidy) {
-        /* printf("** Number of sample lineages (%u) must equal number of proband lineages in the pedigree (%lu)!" */
-        /*         " (ploidy = %lu lineages per individual) **\n", */
         printf("specified lineages: %u\n", avl_count(&pop->ancestors[label]));
         printf("pedigree lineages: %lu\n", self->pedigree->num_samples * ploidy);
-                /* ploidy); */
         ret = MSP_ERR_BAD_PEDIGREE_NUM_SAMPLES;
         goto out;
     }

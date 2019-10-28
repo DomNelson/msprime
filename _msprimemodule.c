@@ -2366,6 +2366,9 @@ out:
 static int
 Simulator_parse_pedigree(Simulator *self, PyArrayObject *arr)
 {
+    // TODO: Simpler to pass separate arrays for IDs, parents, sex, etc.?
+    //       Would mean column specification would be entirely handled in
+    //       Python.
     int ret = -1;
     int i;
     int ndim;

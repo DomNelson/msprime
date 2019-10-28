@@ -160,6 +160,9 @@ msp_strerror_internal(int err)
             ret = "The number of haploid lineages denoted by sample_size must "
                 "be divisible by ploidy (default 2)";
             break;
+        case MSP_ERR_BAD_PEDIGREE_ID:
+            ret = "Individual IDs in pedigrees must be strictly > 0.";
+            break;
 
         default:
             ret = "Error occurred generating error string. Please file a bug "
