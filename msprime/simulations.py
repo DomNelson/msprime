@@ -1054,7 +1054,11 @@ class Pedigree(object):
         probands = set(self.inds).difference(self.parents.ravel())
 
         if self.num_samples is not None:
-            assert self.num_samples >= 2
+            if self.num_samples > len(probands):
+                raise ValueError((
+                        "Cannot specify more samples ({}) than there are "
+                        "probands in the pedigree ({}) "
+                        ).format(self.num_samples, len(probands)))
             self.samples = np.random.choice(
                 list(probands), size=self.num_samples, replace=False)
 
