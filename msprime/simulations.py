@@ -28,7 +28,7 @@ import sys
 import os
 import warnings
 import copy
-import time
+import time as _time  # Avoid name conflicts
 
 import tskit
 import numpy as np
@@ -411,7 +411,7 @@ def simulate(
         existing tree sequence (see the ``from_ts`` parameter).
     :param float end_time: If specified, terminate the simulation at the
         specified time. In the returned tree sequence, all rootward paths from
-        samples with time < end_time will end in a node with one child with
+        samples with time < end_time will end in a n de with one child with
         time equal to end_time. Sample nodes with time >= end_time will
         also be present in the output tree sequence. If not specified or ``None``,
         run the simulation until all samples have an MRCA at all positions in
@@ -501,6 +501,10 @@ def simulate(
         return next(_replicate_generator(
             sim, mutation_generator, 1, provenance_dict, end_time))
     else:
+        if pedigree is not None:
+            if num_replicates > 1:
+                raise NotImplementedError(
+                        "Replicates within pedigrees not yet supported")
         return _replicate_generator(
             sim, mutation_generator, num_replicates, provenance_dict, end_time)
 
@@ -739,10 +743,10 @@ class Simulator(object):
             self.ll_sim.set_model(event.model.get_ll_representation())
         end_time = sys.float_info.max if end_time is None else end_time
         print("Running ll_sim")
-        start_time = time.time()
+        start_time = _time.time()
         self.ll_sim.run(end_time)
         self.ll_sim.finalise_tables()
-        print("Finished running ll_sim in", time.time() - start_time, "seconds")
+        print("Finished running ll_sim in", _time.time() - start_time, "seconds")
 
     def get_tree_sequence(self, mutation_generator=None, provenance_record=None):
         """

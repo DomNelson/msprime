@@ -2549,6 +2549,7 @@ out:
 int
 msp_reset(msp_t *self)
 {
+    // TODO: This will need to be updated to allow replicates within pedigree sims
     int ret = 0;
     size_t N = self->num_populations;
     population_id_t population_id;
