@@ -163,7 +163,9 @@ msp_strerror_internal(int err)
         case MSP_ERR_BAD_PEDIGREE_ID:
             ret = "Individual IDs in pedigrees must be strictly > 0.";
             break;
-
+        case MSP_ERR_BAD_PROPORTION:
+            ret = "Proportion values must have 0 <= x <= 1";
+            break;
         default:
             ret = "Error occurred generating error string. Please file a bug "
                 "report!";
