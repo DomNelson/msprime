@@ -3694,9 +3694,11 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         } else {
             assert (self->pedigree == NULL);
             printf("DTWF - no pedigree detected\n");
+            ret = msp_run_dtwf(self, scaled_time, max_events);
         }
-        printf("Running DTWF\n");
-        ret = msp_run_dtwf(self, scaled_time, max_events);
+        printf("**NOT** running DTWF\n");
+        /* printf("Running DTWF\n"); */
+        /* ret = msp_run_dtwf(self, scaled_time, max_events); */
     } else if (self->model.type == MSP_MODEL_SWEEP) {
         /* FIXME making sweep atomic for now as it's non-renentrant */
         ret = msp_run_sweep(self);
