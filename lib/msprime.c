@@ -1359,6 +1359,23 @@ msp_defrag_segment_chain(msp_t *self, segment_t *z)
     return 0;
 }
 
+static void
+msp_print_individual(msp_t *self, individual_t ind, FILE *out)
+{
+    size_t j;
+
+    fprintf(out, "ID: %d, TSK_ID %d - Time: %f, Parents: [", ind.id, ind.tsk_id, ind.time);
+
+    for (j = 0; j < self->pedigree->ploidy; j++) {
+        if (ind.parents[j] != NULL) {
+            fprintf(out, " %d", ind.parents[j]->id);
+        } else {
+            fprintf(out, " None");
+        }
+    }
+    fprintf(out, " ]\n");
+}
+
 /* TODO: is floor the correct operation here or should we round? */
 static double
 msp_dtwf_generate_breakpoint(msp_t *self, double start)
@@ -1520,6 +1537,7 @@ msp_set_pedigree(msp_t *self, size_t num_rows, tsk_id_t *inds, tsk_id_t *parents
         double *times, tsk_flags_t *is_sample)
 {
     int ret;
+    int ind_parents[2] = {-1, -1};
     size_t i, j;
     tsk_id_t parent_ix;
     tsk_flags_t sample_flag;
@@ -1549,6 +1567,7 @@ msp_set_pedigree(msp_t *self, size_t num_rows, tsk_id_t *inds, tsk_id_t *parents
             parent_ix = parents[i * self->pedigree->ploidy + j];
             if (parent_ix >= 0) {
                 *(ind->parents + j) = self->pedigree->inds + parent_ix;
+                ind_parents[j] = (self->pedigree->inds + parent_ix)->id;
             }
         }
 
@@ -1718,23 +1737,6 @@ msp_pedigree_pop_ind(msp_t *self, individual_t **ind)
 
     ret = 0;
     return ret;
-}
-
-static void
-msp_print_individual(msp_t *self, individual_t ind, FILE *out)
-{
-    size_t j;
-
-    fprintf(out, "ID: %d, TSK_ID %u - Time: %f, Parents: [", ind.id, ind.tsk_id, ind.time);
-
-    for (j = 0; j < self->pedigree->ploidy; j++) {
-        if (ind.parents[j] != NULL) {
-            fprintf(out, " %d", ind.parents[j]->id);
-        } else {
-            fprintf(out, " None");
-        }
-    }
-    fprintf(out, " ]\n");
 }
 
 void
@@ -2938,6 +2940,7 @@ msp_reset_from_samples(msp_t *self)
         }
     }
     /* Set up the sample */
+    printf("Loading samples\n");
     for (u = 0; u < (node_id_t) self->num_samples; u++) {
         if (self->samples[u].time <= self->start_time) {
             ret = msp_insert_sample(self, u, self->samples[u].population_id);
@@ -2967,6 +2970,7 @@ msp_reset_from_samples(msp_t *self)
                 ind->tsk_id = ret;
             }
             tsk_ind = ind->tsk_id;
+            msp_print_individual(self, *ind, stdout);
         }
         ret = msp_store_node(self, TSK_NODE_IS_SAMPLE,
                 self->samples[u].time,
@@ -2975,6 +2979,7 @@ msp_reset_from_samples(msp_t *self)
             goto out;
         }
     }
+    printf("Done loading samples\n");
     ret = msp_insert_overlap_count(self, 0, self->num_samples);
     if (ret != 0) {
         goto out;
@@ -3456,9 +3461,9 @@ int MSP_WARN_UNUSED
 msp_pedigree_climb(msp_t *self)
 {
     int ret, ix;
-    char id_str[100];
+    /* char id_str[100]; */
     size_t i, j;
-    tsk_size_t id_str_len;
+    /* tsk_size_t id_str_len; */
     tsk_id_t node_tsk_id = TSK_NULL;
     individual_t *ind = NULL;
     individual_t *parent = NULL;
@@ -3483,6 +3488,7 @@ msp_pedigree_climb(msp_t *self)
         }
         assert(ind->time >= self->time);
         self->time = ind->time;
+        msp_print_individual(self, *ind, stdout);
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
             parent = ind->parents[i];
@@ -3498,26 +3504,7 @@ msp_pedigree_climb(msp_t *self)
                 continue;
             }
 
-            /* If the parent did contribute, we add them to the individual table */
-            // TODO: This adds the parents of all individuals who are reached by
-            // climbing - wasteful, since few visited individuals become nodes
-            // through CA events
-            if (parent != NULL && parent->tsk_id == TSK_NULL) {
-                sprintf(id_str, "%d", parent->id);
-                id_str_len = (tsk_size_t) ceil(log10(parent->id + 1));
-                assert(id_str_len > 0);
-                ret = tsk_individual_table_add_row(&self->tables->individuals, 0,
-                        NULL, 0, id_str, id_str_len);
-                if (ret < 0) {
-                    goto out;
-                }
-                parent->tsk_id = ret;
-            }
             node_tsk_id = TSK_NULL;
-            if (parent != NULL) {
-                node_tsk_id = parent->tsk_id;
-            }
-
             /* Merge segments inherited from this ind and recombine */
             // TODO: Make sure population gets properly set when more than one
             ret = msp_merge_ancestors(self, segments, 0, 0, &merged_segment,
@@ -3571,9 +3558,11 @@ msp_pedigree_climb(msp_t *self)
                 }
             }
         }
+        printf("\n");
         ind->merged = true;
     }
     self->pedigree->state = MSP_PED_STATE_CLIMB_COMPLETE;
+    printf("Climbing complete\n");
 
     ret = 0;
 out:
