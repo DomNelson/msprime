@@ -1826,12 +1826,14 @@ msp_pedigree_load_pop(msp_t *self)
     i = 0;
     while(avl_count(&pop->ancestors[label]) > 0) {
         node = pop->ancestors[label].head;
-        sample_ix = i / ploidy;
-        sample_ind = self->pedigree->samples[sample_ix];
-        parent_ix = i % ploidy;
         segment = node->item;
         avl_unlink_node(&pop->ancestors[label], node);
         msp_free_avl_node(self, node);
+
+        sample_ix = segment->value / ploidy;
+        assert(sample_ix < self->pedigree->num_samples);
+        sample_ind = self->pedigree->samples[sample_ix];
+        parent_ix = segment->value % ploidy;
 
         ret = msp_pedigree_add_individual_segment(self, sample_ind, segment, parent_ix);
         if (ret != 0) {
@@ -3227,7 +3229,6 @@ msp_reset_from_samples(msp_t *self)
     }
     /* Set up the sample */
     for (u = 0; u < (node_id_t) self->num_samples; u++) {
-        printf("Inserting sample node %d\n", u);
         if (self->samples[u].time <= self->start_time) {
             ret = msp_insert_sample(self, u, self->samples[u].population_id);
             if (ret != 0) {
@@ -3247,7 +3248,6 @@ msp_reset_from_samples(msp_t *self)
             ind = self->pedigree->samples[sample_idx];
             id_str_len = (tsk_size_t) ceil(log10(ind->id + 1));
             sprintf(id_str, "%d", ind->id);
-            printf("Creating sample individual %d\n", ind->id);
             if (ind->tsk_id == TSK_NULL) {
                 ret = tsk_individual_table_add_row(&self->tables->individuals, 0,
                         NULL, 0, id_str, id_str_len);
@@ -3758,9 +3758,9 @@ msp_pedigree_climb(msp_t *self)
 {
     int ret, ix;
     char id_str[100];
-    size_t i, j;
+    size_t i, j, num_segments;
     tsk_size_t id_str_len;
-    tsk_id_t node_tsk_id = TSK_NULL;
+    /* tsk_id_t node_tsk_id = TSK_NULL; */
     individual_t *ind = NULL;
     individual_t *parent = NULL;
     segment_t *merged_segment = NULL;
@@ -3774,11 +3774,6 @@ msp_pedigree_climb(msp_t *self)
 
     self->pedigree->state = MSP_PED_STATE_CLIMBING;
 
-    /* HACK: Output table of simulated relationships for comparison with real pedigree */
-    printf("ind\tfather\tmother\n");
-    printf("%d sample individuals detected\n",
-            self->tables->individuals.num_rows);
-
     while (avl_count(&self->pedigree->ind_heap) > 0) {
         /* NOTE: We don't yet support early termination - need to properly
          handle moving segments back into population (or possibly keep them
@@ -3789,9 +3784,9 @@ msp_pedigree_climb(msp_t *self)
         }
         assert(ind->time >= self->time);
         self->time = ind->time;
-
-        // HACK: printed output
-        /* printf("%d", ind->id); */
+        if (self->time > 10) {
+            goto out;
+        }
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
             parent = ind->parents[i];
@@ -3800,19 +3795,15 @@ msp_pedigree_climb(msp_t *self)
                 goto out;
             }
             segments = ind->segments + i;
-            printf("%d descendants climbed segments to %d\n", avl_count(segments), ind->id);
-
-            // HACK: printed output
-            /* if (parent != NULL) { */
-            /*     printf("\t%d", parent->id); */
-            /* } else { */
-            /*     printf("\t0"); */
-            /* } */
 
             /* This parent may not have contributed any ancestral material
              * to the samples */
-            if (avl_count(segments) == 0) {
+            num_segments = avl_count(segments);
+            if (num_segments == 0) {
+                printf("No segments\n");
                 continue;
+            } else if (num_segments > 1) {
+                msp_print_individual(self, *ind, stdout);
             }
 
             /* If the parent did contribute, we add them to the individual table */
@@ -3830,43 +3821,13 @@ msp_pedigree_climb(msp_t *self)
                 }
                 ind->tsk_id = ret;
             }
-            /* node_tsk_id = TSK_NULL; */
-            /* if (parent != NULL) { */
-            /*     node_tsk_id = parent->tsk_id; */
-            /* } */
-            /* if (parent != NULL && parent->tsk_id == TSK_NULL) { */
-            /*     sprintf(id_str, "%d", parent->id); */
-            /*     id_str_len = (tsk_size_t) ceil(log10(parent->id + 1)); */
-            /*     assert(id_str_len > 0); */
-            /*     ret = tsk_individual_table_add_row(&self->tables->individuals, 0, */
-            /*             NULL, 0, id_str, id_str_len); */
-            /*     if (ret < 0) { */
-            /*         goto out; */
-            /*     } */
-            /*     parent->tsk_id = ret; */
-            /* } */
-            /* node_tsk_id = TSK_NULL; */
-            /* if (parent != NULL) { */
-            /*     node_tsk_id = parent->tsk_id; */
-            /* } */
 
             /* Merge segments inherited from this ind and recombine */
             // TODO: Make sure population gets properly set when more than one
-
-            //HACK
-            size_t num_nodes;
-            num_nodes = msp_get_num_nodes(self);
-
             ret = msp_merge_ancestors(self, segments, 0, 0, &merged_segment,
                     ind->tsk_id);
             if (ret != 0) {
                 goto out;
-            }
-
-            // HACK
-            if (msp_get_num_nodes(self) > num_nodes) {
-                printf("%d new nodes in individual %d\n",
-                        msp_get_num_nodes(self) - num_nodes, ind->id);
             }
 
             if (merged_segment == NULL) {
@@ -3902,11 +3863,21 @@ msp_pedigree_climb(msp_t *self)
                 if (u[j] == NULL) {
                     continue;
                 }
+                /* if (u[j]->prev != NULL) { */
+                /*     segment_t *s = u[j]; */
+                /*     printf("%d\n", u[j]->prev); */
+                /*     printf("[pop=%d,label=%d]", s->population_id, s->label); */
+                /*     printf("[(%f-%f) %d] ", s->left, s->right, (int) s->value); */
+                /*     printf("[pop=%d,label=%d]", s->prev->population_id, s->prev->label); */
+                /*     printf("[(%f-%f) %d] ", s->prev->left, s->prev->right, (int) s->value); */
+                /*     #<{(| while (s->prev != NULL) { |)}># */
+                /*     #<{(|     s = s->prev; |)}># */
+                /*     #<{(| } |)}># */
+                /*     #<{(| msp_print_segment_chain(self, s, stdout); |)}># */
+                /*     #<{(| msp_print_segment_chain(self, u[j]->prev, stdout); |)}># */
+                /*     assert(1 == 2); */
+                /* } */
                 /* assert(u[j]->prev == NULL); */
-
-                //HACK
-                printf("Ind %d inherited from parent %d\n",
-                        ind->id, parent->id);
 
                 ret = msp_pedigree_add_individual_segment(self, parent, u[j], j);
                 if (ret != 0) {
@@ -3920,12 +3891,10 @@ msp_pedigree_climb(msp_t *self)
                 }
             }
         }
-        // HACK: Printed output
-        /* printf("\n"); */
-
         ind->merged = true;
     }
     self->pedigree->state = MSP_PED_STATE_CLIMB_COMPLETE;
+    printf("Pedigree climbing complete\n");
 
     ret = 0;
 out:
