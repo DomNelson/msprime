@@ -3758,7 +3758,7 @@ msp_pedigree_climb(msp_t *self)
 {
     int ret, ix;
     char id_str[100];
-    size_t i, j, num_segments;
+    size_t i, j;
     tsk_size_t id_str_len;
     /* tsk_id_t node_tsk_id = TSK_NULL; */
     individual_t *ind = NULL;
@@ -3784,9 +3784,6 @@ msp_pedigree_climb(msp_t *self)
         }
         assert(ind->time >= self->time);
         self->time = ind->time;
-        if (self->time > 10) {
-            goto out;
-        }
 
         for (i = 0; i < self->pedigree->ploidy; i++) {
             parent = ind->parents[i];
@@ -3798,12 +3795,8 @@ msp_pedigree_climb(msp_t *self)
 
             /* This parent may not have contributed any ancestral material
              * to the samples */
-            num_segments = avl_count(segments);
-            if (num_segments == 0) {
-                printf("No segments\n");
+            if (avl_count(segments) == 0) {
                 continue;
-            } else if (num_segments > 1) {
-                msp_print_individual(self, *ind, stdout);
             }
 
             /* If the parent did contribute, we add them to the individual table */
@@ -3894,10 +3887,11 @@ msp_pedigree_climb(msp_t *self)
         ind->merged = true;
     }
     self->pedigree->state = MSP_PED_STATE_CLIMB_COMPLETE;
-    printf("Pedigree climbing complete\n");
+    /* printf("Pedigree climbing complete\n"); */
 
     ret = 0;
 out:
+    /* printf("Exiting climbing\n"); */
     return ret;
 }
 
@@ -4539,6 +4533,7 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         if (ret != 0) {
             goto out;
         }
+        /* printf("Building pedigree queue\n"); */
         ret = msp_pedigree_build_ind_queue(self);
         if (ret != 0) {
             goto out;
@@ -4547,6 +4542,8 @@ msp_run(msp_t *self, double max_time, unsigned long max_events)
         if (ret != 0) {
             goto out;
         }
+        /* printf("Pedigree climb exit code %d\n", ret); */
+        /* printf("Pedigree climb complete\n"); */
     } else if (self->model.type == MSP_MODEL_SWEEP) {
         /* FIXME making sweep atomic for now as it's non-rentrant */
         ret = msp_run_sweep(self);
